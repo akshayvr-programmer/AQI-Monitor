@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Home } from 'lucide-react';
 
 const GovernmentLogin = () => {
   const [activeTab, setActiveTab] = useState('login');
@@ -9,11 +8,9 @@ const GovernmentLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
 
-  const API_URL = 'http://localhost:5000'; // Make sure this matches your backend port
+  const API_URL = 'http://localhost:5000';
 
-  // Login handler
   const handleLogin = async () => {
     setError('');
     setLoading(true);
@@ -36,12 +33,10 @@ const GovernmentLogin = () => {
       const data = await response.json();
 
       if (response.ok) {
-        // Store token
         localStorage.setItem('token', data.token);
         localStorage.setItem('role', data.role);
-        
-        // Navigate to dashboard
-        navigate('/gov-dashboard');
+        localStorage.setItem('userEmail', email);
+        window.location.href = '/gov-dashboard';
       } else {
         setError(data.message || 'Login failed');
       }
@@ -53,7 +48,6 @@ const GovernmentLogin = () => {
     }
   };
 
-  // Signup handler
   const handleSignup = async () => {
     setError('');
     setLoading(true);
@@ -82,8 +76,7 @@ const GovernmentLogin = () => {
       const data = await response.json();
 
       if (response.ok) {
-        // Navigate to create password page with token
-        navigate(`/create-password?token=${data.token}`);
+        window.location.href = `/create-password?token=${data.token}`;
       } else {
         setError(data.message || 'Signup failed');
       }
@@ -107,6 +100,12 @@ const GovernmentLogin = () => {
 
   return (
     <div style={styles.body}>
+      {/* Home Button */}
+      <button style={styles.homeButton} onClick={() => window.location.href = '/'}>
+        <Home size={20} />
+        <span>Back to Home</span>
+      </button>
+
       <div style={styles.container}>
         <div style={styles.shieldIcon}>🛡</div>
         <h1 style={styles.h1}>AQI Monitor System</h1>
@@ -217,6 +216,26 @@ const styles = {
     minHeight: '100vh',
     padding: '20px',
     margin: 0,
+    position: 'relative',
+  },
+  homeButton: {
+    position: 'absolute',
+    top: '30px',
+    left: '30px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '12px 20px',
+    background: 'rgba(26, 26, 26, 0.8)',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid #333',
+    borderRadius: '12px',
+    color: '#fff',
+    fontSize: '14px',
+    fontWeight: '500',
+    cursor: 'pointer',
+    transition: 'all 0.3s',
+    zIndex: 10,
   },
   container: {
     background: '#1a1a1a',
