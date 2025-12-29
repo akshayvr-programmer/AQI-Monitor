@@ -9,10 +9,7 @@ const CreatePasswordPage = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [showError, setShowError] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('signup');
-
-  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
   const generateCaptcha = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -68,27 +65,22 @@ const CreatePasswordPage = () => {
 
   const handleSubmit = async () => {
     setShowError(false);
-    setLoading(true);
 
     if (password !== confirmPassword) {
       setErrorMessage('Passwords do not match');
       setShowError(true);
-      setLoading(false);
       return;
     }
 
     if (captchaInput.toUpperCase() !== captchaCode) {
       setErrorMessage('Invalid CAPTCHA code');
       setShowError(true);
-      setLoading(false);
-      refreshCaptcha();
       return;
     }
 
     if (!allMet) {
-      setErrorMessage('Password does not meet all requirements');
+      setErrorMessage('Password does not meet requirements');
       setShowError(true);
-      setLoading(false);
       return;
     }
 
@@ -97,14 +89,13 @@ const CreatePasswordPage = () => {
     const token = urlParams.get('token');
 
     if (!token) {
-      setErrorMessage('Invalid signup link. Please start the signup process again.');
+      setErrorMessage('Invalid signup link');
       setShowError(true);
-      setLoading(false);
       return;
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/signup/complete`, {
+      const response = await fetch('http://localhost:5000/api/signup/complete', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -115,36 +106,22 @@ const CreatePasswordPage = () => {
       const data = await response.json();
 
       if (response.ok) {
-        // Store the token and user info
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('role', data.role);
-        localStorage.setItem('userId', data.userId);
-        localStorage.setItem('userEmail', data.email);
-
-        // Show success message
-        alert('✅ Account created successfully! Redirecting to dashboard...');
-        
-        // Redirect based on role
-        if (data.role === 'govt' || data.role === 'admin') {
-          window.location.href = '/govt-dashboard';
-        } else {
-          window.location.href = '/dashboard';
-        }
+        alert('Account created successfully! Redirecting to login...');
+        // Redirect to login page
+        window.location.href = '/';
       } else {
         setErrorMessage(data.message || 'Failed to create account');
         setShowError(true);
-        setLoading(false);
       }
     } catch (error) {
-      console.error('Signup error:', error);
-      setErrorMessage('Cannot connect to server. Please make sure the backend is running.');
+      console.error('Error:', error);
+      setErrorMessage('Cannot connect to server. Please try again.');
       setShowError(true);
-      setLoading(false);
     }
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && isFormValid() && !loading) {
+    if (e.key === 'Enter' && isFormValid()) {
       handleSubmit();
     }
   };
@@ -162,7 +139,7 @@ const CreatePasswordPage = () => {
               ...styles.tab,
               ...(activeTab === 'login' ? styles.tabActive : {})
             }}
-            onClick={() => window.location.href = '/'}
+            onClick={() => setActiveTab('login')}
           >
             Login
           </button>
@@ -199,13 +176,11 @@ const CreatePasswordPage = () => {
                 placeholder="Enter your password"
                 autoComplete="new-password"
                 style={styles.input}
-                disabled={loading}
               />
               <button
                 type="button"
                 style={styles.togglePassword}
                 onClick={() => setShowPassword(!showPassword)}
-                disabled={loading}
               >
                 👁
               </button>
@@ -256,22 +231,15 @@ const CreatePasswordPage = () => {
                 placeholder="Confirm your password"
                 autoComplete="new-password"
                 style={styles.input}
-                disabled={loading}
               />
               <button
                 type="button"
                 style={styles.togglePassword}
                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                disabled={loading}
               >
                 👁
               </button>
             </div>
-            {confirmPassword && password !== confirmPassword && (
-              <div style={styles.passwordMismatch}>
-                ⚠ Passwords do not match
-              </div>
-            )}
           </div>
 
           <div style={styles.formGroup}>
@@ -285,7 +253,6 @@ const CreatePasswordPage = () => {
                   type="button"
                   style={styles.refreshCaptcha}
                   onClick={refreshCaptcha}
-                  disabled={loading}
                 >
                   ↻
                 </button>
@@ -300,7 +267,6 @@ const CreatePasswordPage = () => {
               placeholder="Enter the code above"
               autoComplete="off"
               style={{...styles.input, marginTop: '12px'}}
-              disabled={loading}
             />
           </div>
 
@@ -308,16 +274,12 @@ const CreatePasswordPage = () => {
             onClick={handleSubmit}
             style={{
               ...styles.createBtn,
-              ...(isFormValid() && !loading ? {} : styles.createBtnDisabled)
+              ...(isFormValid() ? {} : styles.createBtnDisabled)
             }}
-            disabled={!isFormValid() || loading}
+            disabled={!isFormValid()}
           >
-            {loading ? 'Creating Account...' : 'Create Account'}
+            Create Account
           </button>
-
-          <p style={styles.helpText}>
-            Already have an account? <a href="/" style={styles.link}>Login here</a>
-          </p>
         </div>
       </div>
     </div>
@@ -475,11 +437,6 @@ const styles = {
   requirementMet: {
     color: '#00cc66',
   },
-  passwordMismatch: {
-    color: '#ff4444',
-    fontSize: '13px',
-    marginTop: '8px',
-  },
   captchaBox: {
     background: '#2a2a2a',
     border: '1px solid #333',
@@ -550,17 +507,6 @@ const styles = {
     background: '#2a2a2a',
     color: '#666',
     cursor: 'not-allowed',
-  },
-  helpText: {
-    color: '#999',
-    fontSize: '14px',
-    textAlign: 'center',
-    marginTop: '16px',
-  },
-  link: {
-    color: '#4a9eff',
-    textDecoration: 'none',
-    fontWeight: '500',
   },
 };
 

@@ -1,18 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Activity, AlertTriangle, TrendingUp, TrendingDown, MapPin, Users, 
-  Factory, Shield, Bell, Zap, Wind, Target, Radio, LogOut, ArrowRight, BarChart3
+  Factory, Shield, Bell, Zap, Wind, Target, Radio, LogOut, ArrowRight, 
+  BarChart3, Clock, Play, Pause, Trash2, CheckCircle, XCircle, Loader
 } from 'lucide-react';
 
 const GovDashBoard = () => {
   const [time, setTime] = useState(new Date());
   const [selectedWard, setSelectedWard] = useState(null);
   const [hoveredWard, setHoveredWard] = useState(null);
+  
+  // Command Queue State
+  const [commandQueue, setCommandQueue] = useState([]);
+  const [commandHistory, setCommandHistory] = useState([]);
+  const [activeCommand, setActiveCommand] = useState(null);
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Execute command queue
+  useEffect(() => {
+    if (commandQueue.length > 0 && !activeCommand) {
+      const nextCommand = commandQueue[0];
+      executeCommand(nextCommand);
+    }
+  }, [commandQueue, activeCommand]);
 
   const wards = [
     { id: 1, name: 'Anand Vihar', aqi: 425, lat: 28.6469, lng: 77.3162, zone: 'East', trend: 'up' },
@@ -36,9 +50,9 @@ const GovDashBoard = () => {
   const avgAQI = Math.round(wards.reduce((sum, w) => sum + w.aqi, 0) / wards.length);
 
   const systemAlerts = [
-    { id: 1, time: '12:34:21', level: 'CRITICAL', message: 'Anand Vihar AQI exceeded 400', action: 'DEPLOY' },
-    { id: 2, time: '11:45:08', level: 'WARNING', message: 'Shahdara trending upward +12%', action: 'MONITOR' },
-    { id: 3, time: '10:22:45', level: 'INFO', message: 'Saket showing improvement -8%', action: 'TRACK' },
+    { id: 1, time: '12:34:21', level: 'CRITICAL', message: 'Anand Vihar AQI exceeded 400', station: wards[0] },
+    { id: 2, time: '11:45:08', level: 'WARNING', message: 'Shahdara trending upward +12%', station: wards[1] },
+    { id: 3, time: '10:22:45', level: 'INFO', message: 'Narela critical threshold', station: wards[4] },
   ];
 
   const quickActions = [
@@ -46,6 +60,157 @@ const GovDashBoard = () => {
     { id: 2, label: 'ODD-EVEN SCHEME', icon: <Shield size={16} />, status: 'pending' },
     { id: 3, label: 'FACTORY INSPECTION', icon: <Factory size={16} />, status: 'active' },
   ];
+
+  // Generate unique command ID
+  const generateCommandId = () => `CMD-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+  // Create deployment command
+  const createDeploymentCommand = (station) => {
+    const command = {
+      id: generateCommandId(),
+      type: 'EMERGENCY_RESPONSE',
+      station: station.name,
+      stationId: station.id,
+      zone: station.zone,
+      aqi: station.aqi,
+      status: 'PENDING',
+      priority: station.aqi > 400 ? 'CRITICAL' : station.aqi > 300 ? 'HIGH' : 'MEDIUM',
+      actions: [
+        { id: 1, name: 'ALERT_BROADCAST', status: 'pending', duration: 2000, icon: '🔔' },
+        { id: 2, name: 'SPRINKLER_ACTIVATION', status: 'pending', duration: 3000, icon: '💧' },
+        { id: 3, name: 'TRAFFIC_CONTROL', status: 'pending', duration: 4000, icon: '🚦' },
+        { id: 4, name: 'HEALTH_STANDBY', status: 'pending', duration: 2000, icon: '🏥' },
+        { id: 5, name: 'FIELD_DEPLOYMENT', status: 'pending', duration: 3000, icon: '👮' }
+      ],
+      timestamp: new Date(),
+      progress: 0,
+      canCancel: true
+    };
+
+    return command;
+  };
+
+  // Handle Deploy Button Click
+  const handleDeploy = (station) => {
+    const command = createDeploymentCommand(station);
+    
+    // Add to queue
+    setCommandQueue(prev => [...prev, command]);
+    
+    // Show notification
+    console.log(`Command ${command.id} added to queue for ${station.name}`);
+  };
+
+  // Execute a command from the queue
+  const executeCommand = async (command) => {
+    setActiveCommand(command);
+    
+    // Update command status to EXECUTING
+    setCommandQueue(prev => 
+      prev.map(cmd => cmd.id === command.id ? { ...cmd, status: 'EXECUTING' } : cmd)
+    );
+
+    // Execute each action sequentially
+    for (let i = 0; i < command.actions.length; i++) {
+      const action = command.actions[i];
+      
+      // Update action status to executing
+      updateActionStatus(command.id, action.id, 'executing');
+      
+      // Simulate action execution
+      await new Promise(resolve => setTimeout(resolve, action.duration));
+      
+      // Update action status to completed
+      updateActionStatus(command.id, action.id, 'completed');
+      
+      // Update progress
+      const progress = ((i + 1) / command.actions.length) * 100;
+      updateCommandProgress(command.id, progress);
+    }
+
+    // Mark command as completed
+    completeCommand(command.id);
+  };
+
+  const updateActionStatus = (commandId, actionId, status) => {
+    setCommandQueue(prev =>
+      prev.map(cmd => {
+        if (cmd.id === commandId) {
+          return {
+            ...cmd,
+            actions: cmd.actions.map(action =>
+              action.id === actionId ? { ...action, status } : action
+            )
+          };
+        }
+        return cmd;
+      })
+    );
+  };
+
+  const updateCommandProgress = (commandId, progress) => {
+    setCommandQueue(prev =>
+      prev.map(cmd => cmd.id === commandId ? { ...cmd, progress } : cmd)
+    );
+  };
+
+  const completeCommand = (commandId) => {
+    const completedCommand = commandQueue.find(cmd => cmd.id === commandId);
+    
+    if (completedCommand) {
+      // Update to COMPLETED status
+      const finalCommand = {
+        ...completedCommand,
+        status: 'COMPLETED',
+        completedAt: new Date()
+      };
+
+      // Add to history
+      setCommandHistory(prev => [finalCommand, ...prev].slice(0, 10));
+
+      // Remove from queue
+      setCommandQueue(prev => prev.filter(cmd => cmd.id !== commandId));
+
+      // Clear active command
+      setActiveCommand(null);
+
+      // Auto-remove from history after 30 seconds
+      setTimeout(() => {
+        setCommandHistory(prev => prev.filter(cmd => cmd.id !== commandId));
+      }, 30000);
+    }
+  };
+
+  const cancelCommand = (commandId) => {
+    const command = commandQueue.find(cmd => cmd.id === commandId);
+    
+    if (command && command.canCancel && command.status === 'PENDING') {
+      // Mark as cancelled
+      const cancelledCommand = {
+        ...command,
+        status: 'CANCELLED',
+        cancelledAt: new Date()
+      };
+
+      // Add to history
+      setCommandHistory(prev => [cancelledCommand, ...prev].slice(0, 10));
+
+      // Remove from queue
+      setCommandQueue(prev => prev.filter(cmd => cmd.id !== commandId));
+    }
+  };
+
+  const pauseCommand = (commandId) => {
+    setCommandQueue(prev =>
+      prev.map(cmd => cmd.id === commandId ? { ...cmd, status: 'PAUSED', canCancel: false } : cmd)
+    );
+  };
+
+  const resumeCommand = (commandId) => {
+    setCommandQueue(prev =>
+      prev.map(cmd => cmd.id === commandId ? { ...cmd, status: 'PENDING', canCancel: true } : cmd)
+    );
+  };
 
   return (
     <div style={s.container}>
@@ -56,6 +221,10 @@ const GovDashBoard = () => {
           <span>SYSTEM ACTIVE</span>
           <span style={s.divider}>|</span>
           <span style={s.time}>{time.toLocaleTimeString('en-IN', { hour12: false })} IST</span>
+          <span style={s.divider}>|</span>
+          <span style={s.queueInfo}>
+            QUEUE: {commandQueue.length} | ACTIVE: {activeCommand ? 1 : 0}
+          </span>
         </div>
         <div style={s.statusRight}>
           <Radio size={14} style={{animation: 'pulse 2s infinite'}} />
@@ -151,18 +320,26 @@ const GovDashBoard = () => {
                 const y = 800 - (ward.lat - 28.4) * 1500;
                 const isHovered = hoveredWard === ward.id;
                 const radius = isHovered ? 20 : 14;
+                const hasActiveCommand = commandQueue.some(cmd => cmd.stationId === ward.id);
 
                 return (
                   <g key={ward.id}>
                     {ward.aqi > 350 && (
                       <circle cx={x} cy={y} r={radius + 12} fill={getAQIColor(ward.aqi)} opacity="0.2" style={{animation: 'pulse 2s infinite'}}/>
                     )}
+
+                    {hasActiveCommand && (
+                      <circle cx={x} cy={y} r={radius + 8} fill="none" stroke="#4a9eff" strokeWidth="2" opacity="0.8">
+                        <animate attributeName="r" from={radius + 8} to={radius + 18} dur="2s" repeatCount="indefinite"/>
+                        <animate attributeName="opacity" from="0.8" to="0" dur="2s" repeatCount="indefinite"/>
+                      </circle>
+                    )}
                     
                     <circle
                       cx={x} cy={y} r={radius}
                       fill={getAQIColor(ward.aqi)}
-                      stroke="#00ff00"
-                      strokeWidth={isHovered ? "2" : "1"}
+                      stroke={hasActiveCommand ? "#4a9eff" : "#00ff00"}
+                      strokeWidth={hasActiveCommand ? "3" : isHovered ? "2" : "1"}
                       style={{cursor: 'pointer', transition: 'all 0.3s', filter: isHovered ? 'url(#glow)' : 'none'}}
                       onMouseEnter={() => setHoveredWard(ward.id)}
                       onMouseLeave={() => setHoveredWard(null)}
@@ -204,6 +381,85 @@ const GovDashBoard = () => {
 
         {/* Right Panel */}
         <div style={s.rightPanel}>
+          {/* Command Queue */}
+          {commandQueue.length > 0 && (
+            <div style={s.commandQueueSection}>
+              <div style={s.sectionHeader}>
+                <span style={s.sectionTitle}>
+                  <Activity size={18} /> COMMAND QUEUE ({commandQueue.length})
+                </span>
+                {activeCommand && <Loader size={16} style={{animation: 'spin 1s linear infinite'}} />}
+              </div>
+              <div style={s.commandList}>
+                {commandQueue.map(command => (
+                  <div key={command.id} style={{
+                    ...s.commandItem,
+                    borderLeft: `3px solid ${
+                      command.status === 'EXECUTING' ? '#4a9eff' :
+                      command.priority === 'CRITICAL' ? '#cc0000' :
+                      command.priority === 'HIGH' ? '#ff6600' : '#ffaa00'
+                    }`
+                  }}>
+                    <div style={s.commandHeader}>
+                      <div style={s.commandId}>{command.id}</div>
+                      <div style={{
+                        ...s.commandStatus,
+                        background: command.status === 'EXECUTING' ? '#4a9eff20' : 
+                                   command.status === 'PAUSED' ? '#ffaa0020' : '#00ff0020',
+                        color: command.status === 'EXECUTING' ? '#4a9eff' :
+                               command.status === 'PAUSED' ? '#ffaa00' : '#00ff00'
+                      }}>
+                        {command.status}
+                      </div>
+                    </div>
+
+                    <div style={s.commandInfo}>
+                      <div style={s.commandStation}>{command.station}</div>
+                      <div style={s.commandMeta}>
+                        ZONE: {command.zone} | AQI: {command.aqi} | PRIORITY: {command.priority}
+                      </div>
+                    </div>
+
+                    {command.status === 'EXECUTING' && (
+                      <div style={s.progressBar}>
+                        <div style={{...s.progressFill, width: `${command.progress}%`}} />
+                        <div style={s.progressText}>{Math.round(command.progress)}%</div>
+                      </div>
+                    )}
+
+                    <div style={s.commandActions}>
+                      {command.actions.map(action => (
+                        <div key={action.id} style={{
+                          ...s.actionChip,
+                          background: action.status === 'completed' ? '#00ff0020' :
+                                     action.status === 'executing' ? '#4a9eff20' : '#00ff0010',
+                          border: action.status === 'completed' ? '1px solid #00ff00' :
+                                 action.status === 'executing' ? '1px solid #4a9eff' : '1px solid #00ff0030'
+                        }}>
+                          <span style={{fontSize: '12px'}}>{action.icon}</span>
+                          {action.status === 'completed' && <CheckCircle size={12} color="#00ff00" />}
+                          {action.status === 'executing' && <Loader size={12} color="#4a9eff" style={{animation: 'spin 1s linear infinite'}} />}
+                        </div>
+                      ))}
+                    </div>
+
+                    {command.status === 'PENDING' && (
+                      <div style={s.commandControls}>
+                        <button 
+                          style={s.controlBtn}
+                          onClick={() => cancelCommand(command.id)}
+                          title="Cancel Command"
+                        >
+                          <Trash2 size={14} color="#ff3333" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Alerts */}
           <div style={s.alertsSection}>
             <div style={s.sectionHeader}>
@@ -221,11 +477,46 @@ const GovDashBoard = () => {
                     <span style={{...s.alertLevel, color: alert.level === 'CRITICAL' ? '#ff3333' : '#ffaa00'}}>{alert.level}</span>
                   </div>
                   <p style={s.alertMessage}>{alert.message}</p>
-                  <button style={s.alertBtn}>{alert.action} <ArrowRight size={12} /></button>
+                  <button 
+                    style={s.alertBtn}
+                    onClick={() => handleDeploy(alert.station)}
+                    disabled={commandQueue.some(cmd => cmd.stationId === alert.station.id)}
+                  >
+                    {commandQueue.some(cmd => cmd.stationId === alert.station.id) ? 'IN QUEUE' : 'DEPLOY'} 
+                    <ArrowRight size={12} />
+                  </button>
                 </div>
               ))}
             </div>
           </div>
+
+          {/* Command History */}
+          {commandHistory.length > 0 && (
+            <div style={s.historySection}>
+              <div style={s.sectionHeader}>
+                <span style={s.sectionTitle}><Clock size={18} /> RECENT COMMANDS</span>
+              </div>
+              <div style={s.historyList}>
+                {commandHistory.slice(0, 3).map(cmd => (
+                  <div key={cmd.id} style={s.historyItem}>
+                    <div style={{
+                      ...s.historyStatus,
+                      color: cmd.status === 'COMPLETED' ? '#00ff00' : '#ff3333'
+                    }}>
+                      {cmd.status === 'COMPLETED' ? <CheckCircle size={16} /> : <XCircle size={16} />}
+                    </div>
+                    <div style={s.historyInfo}>
+                      <div style={s.historyStation}>{cmd.station}</div>
+                      <div style={s.historyTime}>
+                        {cmd.completedAt ? cmd.completedAt.toLocaleTimeString('en-IN', {hour12: false}) : 
+                         cmd.cancelledAt ? cmd.cancelledAt.toLocaleTimeString('en-IN', {hour12: false}) : ''}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div style={s.actionsSection}>
@@ -255,6 +546,16 @@ const GovDashBoard = () => {
           0%, 100% { opacity: 0.3; }
           50% { opacity: 0.6; }
         }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        
+        button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
       `}</style>
     </div>
   );
@@ -268,6 +569,7 @@ const s = {
   statusDot: { width: '8px', height: '8px', borderRadius: '50%', background: '#ff3333', boxShadow: '0 0 8px #ff3333' },
   divider: { color: '#00ff0050', margin: '0 8px' },
   time: { color: '#4a9eff', fontWeight: '700' },
+  queueInfo: { color: '#ffaa00', fontWeight: '700' },
   header: { padding: '20px 40px', borderBottom: '2px solid #00ff0050', display: 'flex', justifyContent: 'space-between', background: 'linear-gradient(180deg, #0a0a0a 0%, #000 100%)' },
   headerLeft: { display: 'flex', alignItems: 'center', gap: '20px' },
   logo: { width: '56px', height: '56px', background: 'linear-gradient(135deg, #00ff00 0%, #00cc66 100%)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#000', boxShadow: '0 0 20px #00ff0050' },
@@ -295,6 +597,34 @@ const s = {
   legendLabel: { flex: 1 },
   legendRange: { color: '#00ff0080' },
   rightPanel: { display: 'flex', flexDirection: 'column', gap: '20px' },
+  
+  // Command Queue Styles
+  commandQueueSection: { background: '#0a0a0a', border: '1px solid #4a9eff50', borderRadius: '4px', maxHeight: '400px', display: 'flex', flexDirection: 'column' },
+  commandList: { padding: '12px', overflowY: 'auto', flex: 1 },
+  commandItem: { background: '#000', border: '1px solid #00ff0020', borderRadius: '4px', padding: '12px', marginBottom: '12px' },
+  commandHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' },
+  commandId: { fontSize: '10px', color: '#4a9eff', fontWeight: '700', letterSpacing: '0.5px' },
+  commandStatus: { fontSize: '9px', fontWeight: '700', padding: '4px 8px', borderRadius: '4px', letterSpacing: '0.5px' },
+  commandInfo: { marginBottom: '12px' },
+  commandStation: { fontSize: '12px', fontWeight: '700', color: '#fff', marginBottom: '4px' },
+  commandMeta: { fontSize: '9px', color: '#00ff0080', letterSpacing: '0.5px' },
+  progressBar: { position: 'relative', height: '6px', background: '#00ff0010', borderRadius: '3px', marginBottom: '12px', overflow: 'hidden' },
+  progressFill: { position: 'absolute', height: '100%', background: 'linear-gradient(90deg, #4a9eff 0%, #00ff00 100%)', transition: 'width 0.3s', boxShadow: '0 0 8px #4a9eff' },
+  progressText: { position: 'absolute', top: '-2px', right: '4px', fontSize: '8px', color: '#4a9eff', fontWeight: '700' },
+  commandActions: { display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' },
+  actionChip: { padding: '6px 10px', borderRadius: '4px', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.3s' },
+  commandControls: { display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '8px', borderTop: '1px solid #00ff0010' },
+  controlBtn: { background: 'transparent', border: '1px solid #ff333330', borderRadius: '4px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.3s', fontFamily: 'inherit' },
+  
+  // History Styles
+  historySection: { background: '#0a0a0a', border: '1px solid #00ff0030', borderRadius: '4px' },
+  historyList: { padding: '12px' },
+  historyItem: { display: 'flex', alignItems: 'center', gap: '12px', padding: '8px', background: '#000', border: '1px solid #00ff0010', borderRadius: '4px', marginBottom: '8px' },
+  historyStatus: { display: 'flex' },
+  historyInfo: { flex: 1 },
+  historyStation: { fontSize: '11px', fontWeight: '700', color: '#fff', marginBottom: '2px' },
+  historyTime: { fontSize: '9px', color: '#00ff0080' },
+  
   alertsSection: { background: '#0a0a0a', border: '1px solid #00ff0030', borderRadius: '4px' },
   alertsList: { padding: '12px', maxHeight: '300px', overflowY: 'auto' },
   alertItem: { background: '#000', border: '1px solid #00ff0020', borderRadius: '4px', padding: '12px', marginBottom: '8px' },
@@ -302,7 +632,7 @@ const s = {
   alertTime: { fontSize: '10px', color: '#00ff0080' },
   alertLevel: { fontSize: '10px', fontWeight: '700' },
   alertMessage: { fontSize: '11px', margin: '0 0 8px 0', lineHeight: '1.4' },
-  alertBtn: { background: '#ff333320', border: '1px solid #ff3333', borderRadius: '4px', padding: '6px 12px', color: '#ff3333', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '700', letterSpacing: '0.5px' },
+  alertBtn: { background: '#ff333320', border: '1px solid #ff3333', borderRadius: '4px', padding: '6px 12px', color: '#ff3333', fontSize: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '700', letterSpacing: '0.5px', fontFamily: 'inherit' },
   actionsSection: { background: '#0a0a0a', border: '1px solid #00ff0030', borderRadius: '4px' },
   actionsList: { padding: '12px' },
   actionBtn: { width: '100%', background: '#000', border: '1px solid #00ff0020', borderRadius: '4px', padding: '12px', marginBottom: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', transition: 'all 0.3s', fontFamily: 'inherit', color: 'inherit' },
