@@ -11,11 +11,16 @@ const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || "your_hackathon_secret_key_123";
 const MONGODB_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/aqi-monitor';
 const PORT = process.env.PORT || 5000;
+const NGROK_URL = process.env.NGROK_URL || "https://vito-glabellar-semijudicially.ngrok-free.dev";
 
 // --- MIDDLEWARE ---
 app.use(express.json());
 app.use(cors({ 
-    origin: "*", 
+    origin: [
+        "*",
+        "https://vito-glabellar-semijudicially.ngrok-free.dev"
+    ], 
+    credentials: true,
     allowedHeaders: ["Content-Type", "ngrok-skip-browser-warning", "authorization"] 
 }));
 
@@ -548,6 +553,7 @@ app.patch('/api/admin/users/:userId/role', authenticateToken, async (req, res) =
 
 app.listen(PORT, () => {
     console.log(`🚀 Server active on http://localhost:${PORT}`);
+    console.log(`🌐 Public URL: ${NGROK_URL}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
