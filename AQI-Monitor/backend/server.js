@@ -20,10 +20,7 @@ app.use(cors({
 }));
 
 // --- DATABASE CONNECTION ---
-mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(MONGODB_URI)
 .then(() => {
     console.log("✅ MongoDB Connected Successfully");
     createDemoUser();
@@ -40,9 +37,10 @@ const userSchema = new mongoose.Schema({
     trim: true,
     validate: {
       validator: function(v) {
-        return v.endsWith('@gov.in');
+        // Allow emails ending with @gov.in or @*.gov.in (like @delhi.gov.in)
+        return /\.gov\.in$/.test(v) || v.endsWith('@gov.in');
       },
-      message: 'Email must be a valid government email (@gov.in)'
+      message: 'Email must be a valid government email (@gov.in or @*.gov.in)'
     }
   },
   password: {
@@ -69,21 +67,34 @@ const userSchema = new mongoose.Schema({
 });
 
 // Hash password before saving
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre('save', async function() {
+  if (!this.isModified('password')) return;
   
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    next();
+    console.log('✅ Password hashed in pre-save hook');
   } catch (error) {
-    next(error);
+    console.error('❌ Error hashing password:', error);
+    throw error;
   }
 });
 
 // Method to compare passwords
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+  try {
+    console.log('🔐 Comparing passwords...');
+    console.log('Candidate password length:', candidatePassword?.length);
+    console.log('Stored hash exists:', !!this.password);
+    console.log('Stored hash length:', this.password?.length);
+    
+    const result = await bcrypt.compare(candidatePassword, this.password);
+    console.log('🔐 Password comparison result:', result);
+    return result;
+  } catch (error) {
+    console.error('❌ Password comparison error:', error.message);
+    throw error;
+  }
 };
 
 const User = mongoose.model('User', userSchema);
@@ -117,20 +128,21 @@ async function createDemoUser() {
         const demoEmail = "admin@delhi.gov.in";
         const demoPass = "govt123";
         
-        const exists = await User.findOne({ email: demoEmail });
-        if (!exists) {
-            const user = new User({ 
-                email: demoEmail, 
-                password: demoPass, 
-                role: "govt" 
-            });
-            await user.save();
-            console.log(`👤 Demo Govt User Created: ${demoEmail} / ${demoPass}`);
-        } else {
-            console.log("ℹ️ Demo Govt User already exists.");
-        }
+        // Delete existing demo user to recreate with fresh password
+        await User.deleteOne({ email: demoEmail });
+        console.log("🗑️ Removed old demo user (if existed)");
+        
+        const user = new User({ 
+            email: demoEmail, 
+            password: demoPass, 
+            role: "govt" 
+        });
+        await user.save();
+        console.log(`👤 Demo Govt User Created: ${demoEmail} / ${demoPass}`);
+        console.log("✅ Password hashed successfully");
     } catch (err) {
-        console.log("Error seeding user:", err);
+        console.log("❌ Error seeding user:", err.message);
+        console.log("Stack:", err.stack);
     }
 }
 
@@ -200,34 +212,53 @@ app.get('/api/health', (req, res) => {
 // 1. LOGIN ROUTE
 app.post('/api/login', async (req, res) => {
     try {
+        console.log('🔐 Login attempt received');
+        console.log('Request body:', { email: req.body.email, passwordProvided: !!req.body.password });
+        
         const { email, password } = req.body;
 
         // Validate input
         if (!email || !password) {
+            console.log('❌ Validation failed: Missing email or password');
             return res.status(400).json({ success: false, message: 'Email and password are required' });
         }
 
+        console.log('🔍 Searching for user:', email.toLowerCase());
+        
         // Find user
         const user = await User.findOne({ email: email.toLowerCase() });
         if (!user) {
+            console.log('❌ User not found:', email);
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
+        console.log('✅ User found:', { email: user.email, role: user.role, isActive: user.isActive });
+
         // Check if user is active
         if (!user.isActive) {
+            console.log('❌ User account is deactivated');
             return res.status(403).json({ success: false, message: 'Account is deactivated. Please contact admin.' });
         }
 
+        console.log('🔑 Verifying password...');
+        
         // Verify password
         const isPasswordValid = await user.comparePassword(password);
+        console.log('Password valid:', isPasswordValid);
+        
         if (!isPasswordValid) {
+            console.log('❌ Invalid password');
             return res.status(401).json({ success: false, message: 'Incorrect password' });
         }
 
+        console.log('✅ Password verified, updating last login');
+        
         // Update last login
         user.lastLogin = new Date();
         await user.save();
 
+        console.log('🎫 Generating JWT token');
+        
         // Generate JWT token
         const token = jwt.sign(
             { 
@@ -238,6 +269,8 @@ app.post('/api/login', async (req, res) => {
             JWT_SECRET,
             { expiresIn: '24h' }
         );
+
+        console.log('✅ Login successful for:', user.email);
 
         res.json({
             success: true,
@@ -250,8 +283,9 @@ app.post('/api/login', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ success: false, message: 'Server error during login' });
+        console.error('❌ Login error:', error);
+        console.error('Error stack:', error.stack);
+        res.status(500).json({ success: false, message: 'Server error during login', error: error.message });
     }
 });
 
@@ -265,8 +299,8 @@ app.post('/api/signup/start', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Email is required' });
         }
 
-        if (!email.endsWith('@gov.in')) {
-            return res.status(400).json({ success: false, message: 'Please use a valid government email (@gov.in)' });
+        if (!email.endsWith('@gov.in') && !/\.gov\.in$/.test(email)) {
+            return res.status(400).json({ success: false, message: 'Please use a valid government email (@gov.in or @*.gov.in)' });
         }
 
         // Check if user already exists
