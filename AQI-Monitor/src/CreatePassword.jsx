@@ -11,6 +11,8 @@ const CreatePasswordPage = () => {
   const [showError, setShowError] = useState(false);
   const [activeTab, setActiveTab] = useState('signup');
 
+  const API_URL = 'https://vito-glabellar-semijudicially.ngrok-free.dev';
+
   const generateCaptcha = () => {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let captcha = '';
@@ -95,10 +97,11 @@ const CreatePasswordPage = () => {
     }
 
     try {
-      const response = await fetch('http://localhost:5000/api/signup/complete', {
+      const response = await fetch(`${API_URL}/api/signup/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({ token, password }),
       });

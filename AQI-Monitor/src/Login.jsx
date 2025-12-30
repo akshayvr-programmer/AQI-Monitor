@@ -9,7 +9,7 @@ const GovernmentLogin = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const API_URL = 'http://localhost:5000';
+  const API_URL = 'https://vito-glabellar-semijudicially.ngrok-free.dev';
 
   const handleLogin = async () => {
     setError('');
@@ -26,6 +26,7 @@ const GovernmentLogin = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({ email, password }),
       });
@@ -42,7 +43,7 @@ const GovernmentLogin = () => {
       }
     } catch (err) {
       console.error('Login error:', err);
-      setError('Cannot connect to server. Please make sure the backend is running on port 5000.');
+      setError('Cannot connect to server. Please make sure the backend is running.');
     } finally {
       setLoading(false);
     }
@@ -69,6 +70,7 @@ const GovernmentLogin = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({ email }),
       });
@@ -82,7 +84,7 @@ const GovernmentLogin = () => {
       }
     } catch (err) {
       console.error('Signup error:', err);
-      setError('Cannot connect to server. Please make sure the backend is running on port 5000.');
+      setError('Cannot connect to server. Please make sure the backend is running.');
     } finally {
       setLoading(false);
     }

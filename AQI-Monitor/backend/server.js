@@ -552,7 +552,7 @@ app.patch('/api/admin/users/:userId/role', authenticateToken, async (req, res) =
 // ==================== SERVER START ====================
 
 app.listen(PORT, () => {
-    console.log(`🚀 Server active on http://localhost:${PORT}`);
+    
     console.log(`🌐 Public URL: ${NGROK_URL}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
