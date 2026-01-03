@@ -10,7 +10,6 @@ const GovernmentLogin = () => {
   const [loading, setLoading] = useState(false);
 
   const API_URL = 'https://vito-glabellar-semijudicially.ngrok-free.dev';
-
   const handleLogin = async () => {
     setError('');
     setLoading(true);
@@ -37,7 +36,7 @@ const GovernmentLogin = () => {
         localStorage.setItem('token', data.token);
         localStorage.setItem('role', data.role);
         localStorage.setItem('userEmail', email);
-        window.location.href = '/gov-dashboard';
+        window.location.href = '/gov-dashboard.html';
       } else {
         setError(data.message || 'Login failed');
       }

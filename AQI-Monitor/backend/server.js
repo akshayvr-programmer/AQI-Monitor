@@ -19,10 +19,13 @@ app.use(cors({
     origin: [
         "*",
         "https://vito-glabellar-semijudicially.ngrok-free.dev"
-    ], 
+    ],
     credentials: true,
-    allowedHeaders: ["Content-Type", "ngrok-skip-browser-warning", "authorization"] 
+    allowedHeaders: ["Content-Type", "ngrok-skip-browser-warning", "authorization"]
 }));
+
+
+
 
 // --- DATABASE CONNECTION ---
 mongoose.connect(MONGODB_URI)
@@ -89,10 +92,6 @@ userSchema.pre('save', async function() {
 userSchema.methods.comparePassword = async function(candidatePassword) {
   try {
     console.log('🔐 Comparing passwords...');
-    console.log('Candidate password length:', candidatePassword?.length);
-    console.log('Stored hash exists:', !!this.password);
-    console.log('Stored hash length:', this.password?.length);
-    
     const result = await bcrypt.compare(candidatePassword, this.password);
     console.log('🔐 Password comparison result:', result);
     return result;
@@ -147,7 +146,6 @@ async function createDemoUser() {
         console.log("✅ Password hashed successfully");
     } catch (err) {
         console.log("❌ Error seeding user:", err.message);
-        console.log("Stack:", err.stack);
     }
 }
 
@@ -197,6 +195,7 @@ app.get('/', (req, res) => {
         <div style="text-align:center; font-family:sans-serif; margin-top:50px;">
             <h1 style="color:#4CAF50;">✅ AQI Monitor Gateway Online</h1>
             <p>The backend is successfully running with MongoDB.</p>
+            <p>Server running on: <strong>http://localhost:${PORT}</strong></p>
             <p>Current Server Time: ${new Date().toLocaleTimeString()}</p>
         </div>
     `);
@@ -552,9 +551,16 @@ app.patch('/api/admin/users/:userId/role', authenticateToken, async (req, res) =
 // ==================== SERVER START ====================
 
 app.listen(PORT, () => {
-    
-    console.log(`🌐 Public URL: ${NGROK_URL}`);
+    console.log(`\n🚀 ================================`);
+    console.log(`🚀 AQI Monitor API Server Started`);
+    console.log(`🚀 ================================`);
+    console.log(`📍 Local:   http://localhost:${PORT}`);
+    console.log(`📊 Health:  http://localhost:${PORT}/api/health`);
+    console.log(`🌐 Public:  ${NGROK_URL}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🗄️  Database: ${mongoose.connection.readyState === 1 ? 'Connected' : 'Connecting...'}`);
+    console.log(`\n👤 Demo User: admin@delhi.gov.in / govt123`);
+    console.log(`================================\n`);
 });
 
 module.exports = app;

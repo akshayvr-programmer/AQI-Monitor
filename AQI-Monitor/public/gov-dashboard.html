@@ -1,0 +1,1713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Delhi Pollution Monitor — Full Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+  <!-- Tailwind for quick styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Turf (spatial operations) -->
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+  <!-- toGeoJSON (KML -> GeoJSON) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/togeojson/0.16.0/togeojson.min.js"></script>
+
+  <style>
+    html,body { height:100%; margin:0; background:#000; color:#fff; font-family: "Trebuchet MS", Helvetica, sans-serif; }
+    #map { height:100vh; width:100vw; }
+    .glass { background: rgba(255,255,255,0.06); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); color: #fff; }
+    .spinner { border: 3px solid rgba(255,255,255,0.12); border-top: 3px solid rgba(255,255,255,0.95); border-radius: 50%; width: 16px; height: 16px; animation: spin 1s linear infinite; display:inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .leaflet-tooltip.my-tooltip { background: rgba(0,0,0,0.7); border-radius: 6px; color: #fff; padding: 6px 8px; border: 0; font-size: 13px; }
+    #liveAQStatusBar { position: absolute; left: 1rem; bottom: 1rem; z-index: 2100; background: rgba(0,0,0,0.6); color: #fff; padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+
+    /* --- ADDED OPENING TAG BELOW --- */
+    /* Removed Neon, replaced with clean typography */
+    .neon-text { 
+      text-shadow: none; 
+      color: #f8fafc;
+      letter-spacing: -0.02em;
+    }
+
+    .tab-btn-active { background: rgba(52, 211, 153, 0.15); border-bottom: 2px solid #34d399; color: #34d399; }
+    .tab-btn { transition: all 0.2s ease; }
+    .tab-btn:hover { background: rgba(255,255,255,0.05); }
+
+    /* 🌿 Professional Action Buttons */
+    .ui-tab-btn {
+      background: rgba(255, 255, 255, 0.03);
+      color: #cbd5e1;
+      padding: 12px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      border-radius: 8px;
+      text-align: center;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+    .ui-tab-btn:hover {
+      background: rgba(52, 211, 153, 0.1);
+      color: #34d399;
+      border-color: rgba(52, 211, 153, 0.4);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    /* Minimal Scrollbar for Sidebar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+  </style>
+</head>
+<body>
+  <!-- Back to Landing -->
+  <button onclick="window.location.href='/'" class="absolute top-6 left-6 z-[1400] px-4 py-2 rounded-full border border-white/30 hover:bg-white hover:text-black transition">
+    ← Back to Home
+  </button>
+<style>
+    /* ... your existing styles ... */
+
+    /* 🟢 PASTE THIS INSIDE THE <style> TAG */
+    
+    /* Custom Blinking Glow Animation */
+    @keyframes pulse-red {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    }
+
+    .live-indicator {
+        background-color: #ef4444; /* Tailwind red-500 */
+        border-radius: 50%;
+        animation: pulse-red 2s infinite;
+    }
+
+    /* Smooth Needle Movement */
+    #aqiNeedle {
+        transform: translateX(-50%);
+        transition: left 1s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 10;
+    }
+
+    #bigAQI {
+        transition: color 0.5s ease;
+    }
+</style>
+
+<div id="leftWrapper" class="fixed left-6 top-1/2 -translate-y-1/2 z-[1500] flex flex-col gap-4">
+    <div id="leftStatsPanel" class="w-80 bg-slate-900/40 glass p-7 rounded-3xl border border-white/10 shadow-2xl">
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span id="liveDot" class="w-3 h-3 live-indicator"></span>
+              <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">Live Delhi Avg</span>
+            </div>
+            <style>
+              :root {
+                --toggle-width: 72px;
+                --toggle-height: 34px;
+                --toggle-bg: #181c20;
+                --toggle-off-color: #475057;
+                --toggle-on-color: #36f9c7;
+                --toggle-transition: 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+              }
+              .neo-toggle-container { position: relative; display: inline-flex; width: fit-content; transform: scale(0.85); }
+              .neo-toggle-input { position: absolute; opacity: 0; width: 0; height: 0; }
+              .neo-toggle { position: relative; width: var(--toggle-width); height: var(--toggle-height); display: block; cursor: pointer; }
+              .neo-track { position: absolute; inset: 0; border-radius: calc(var(--toggle-height) / 2); overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.04); }
+              .neo-background-layer { position: absolute; inset: 0; background: var(--toggle-bg); background-image: linear-gradient(-45deg, rgba(20,20,20,0.8) 0%, rgba(30,30,30,0.3) 50%, rgba(20,20,20,0.8) 100%); }
+              .neo-thumb { position: absolute; top: 4px; left: 4px; width: 28px; height: 28px; border-radius: 50%; transition: transform var(--toggle-transition); z-index: 1; }
+              .neo-thumb-ring { position: absolute; inset: 0; border-radius: 50%; border: 1px solid rgba(255,255,255,0.06); background: var(--toggle-off-color); box-shadow: 0 2px 10px rgba(0,0,0,0.2); transition: all var(--toggle-transition); }
+              .neo-thumb-core { position: absolute; inset: 5px; border-radius: 50%; background: linear-gradient(135deg, rgba(255,255,255,0.06), transparent); }
+              .neo-status { position: absolute; bottom: -18px; left: 0; width: 100%; display: flex; justify-content: center; }
+              .neo-status-dot { width: 6px; height: 6px; border-radius: 50%; background-color: var(--toggle-off-color); transition: all var(--toggle-transition); }
+              .neo-status-text { font-size: 9px; font-weight: 600; color: var(--toggle-off-color); letter-spacing: 1px; transition: all var(--toggle-transition); }
+              .neo-toggle-input:checked + .neo-toggle .neo-thumb { transform: translateX(calc(var(--toggle-width) - 36px)); }
+              .neo-toggle-input:checked + .neo-toggle .neo-thumb-ring { background-color: var(--toggle-on-color); border-color: rgba(54,249,199,0.3); box-shadow: 0 0 15px rgba(54,249,199,0.18); }
+              .neo-toggle-input:checked + .neo-toggle .neo-status-dot { background-color: var(--toggle-on-color); box-shadow: 0 0 8px var(--toggle-on-color); }
+              .neo-toggle-input:checked + .neo-toggle .neo-status-text { color: var(--toggle-on-color); }
+              .neo-toggle-input:checked + .neo-toggle .neo-status-text::before { content: "ACTIVE"; }
+              .neo-toggle-input:not(:checked) + .neo-toggle .neo-status-text::before { content: "WEAR N95"; }
+            </style>
+            <div class="neo-toggle-container ml-auto">
+              <input class="neo-toggle-input" id="neo-toggle-govt" type="checkbox" aria-label="Neo toggle" />
+              <label class="neo-toggle" for="neo-toggle-govt" role="switch" aria-checked="false" tabindex="0">
+                <div class="neo-track">
+                  <div class="neo-background-layer"></div>
+                </div>
+                <div class="neo-thumb">
+                  <div class="neo-thumb-ring"></div>
+                  <div class="neo-thumb-core"></div>
+                </div>
+                <div class="neo-status" aria-hidden="true">
+                  <div class="neo-status-text"></div>
+                </div>
+              </label>
+            </div>
+        </div>
+
+        <div class="flex items-baseline gap-3 mb-2">
+            <h1 id="bigAQI" class="text-7xl font-black leading-none tracking-tighter">---</h1>
+            <span class="text-[10px] text-gray-500 font-bold uppercase">AQI (US)</span>
+        </div>
+
+        <div id="statusBadge" class="inline-block px-4 py-1.5 rounded-lg text-lg font-bold mb-8 transition-colors duration-500">
+            ---
+        </div>
+
+        <div class="space-y-5 mb-8 border-t border-white/5 pt-6">
+            <div class="flex justify-between items-end">
+                <div>
+                    <p class="text-gray-500 text-[10px] font-bold uppercase tracking-widest mb-1">PM10 Particle</p>
+                    <p class="text-2xl font-medium text-slate-200"><span id="val-pm10">---</span></p>
+                </div>
+                <span class="text-[10px] text-gray-600 font-bold mb-1">µg/m³</span>
+            </div>
+            <div class="flex justify-between items-end">
+                <div>
+                    <p class="text-gray-500 text-[10px] font-bold uppercase tracking-widest mb-1">PM2.5 Particle</p>
+                    <p class="text-2xl font-medium text-slate-200"><span id="val-pm25">---</span></p>
+                </div>
+                <span class="text-[10px] text-gray-600 font-bold mb-1">µg/m³</span>
+            </div>
+        </div>
+
+        <div class="relative w-full pb-2">
+            <div class="h-1.5 w-full rounded-full flex overflow-hidden bg-white/10">
+                <div class="h-full bg-emerald-500" style="width: 10%"></div> <div class="h-full bg-yellow-400" style="width: 10%"></div> <div class="h-full bg-orange-500" style="width: 20%"></div> <div class="h-full bg-red-500" style="width: 20%"></div>    <div class="h-full bg-purple-600" style="width: 20%"></div> <div class="h-full bg-rose-900" style="width: 20%"></div>   </div>
+            <div id="aqiNeedle" class="absolute top-[-3px] w-3 h-3 bg-white rounded-full border-2 border-black shadow-[0_0_10px_white]" style="left: 0%;"></div>
+        </div>
+    </div>
+</div>
+  <!-- Search bar -->
+  <div class="absolute top-6 left-1/2 -translate-x-1/2 z-[1400] w-[92%] max-w-xl">
+    <div class="relative">
+      <input id="searchInput" type="text" placeholder="Search ward / locality (Enter) — e.g. Rohini, Connaught Place, IGI Airport" class="w-full px-5 py-3 rounded-full glass placeholder-gray-300 focus:outline-none pr-28 text-sm" />
+      <button id="searchBtn" class="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 rounded-full bg-white/8 hover:bg-white/12 text-sm">Search</button>
+    </div>
+  </div>
+
+  <!-- Map container -->
+  <div id="map"></div>
+
+  <!-- Loading overlay -->
+  <div id="loadOverlay" style="display:none;position:absolute; inset:0; z-index:2000; align-items:center; justify-content:center; pointer-events:none;">
+    <div class="glass flex items-center gap-3 p-3 pointer-events-auto">
+      <div class="spinner" aria-hidden="true"></div>
+      <div id="loadText" class="text-sm">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Info side panel (glassmorphism) -->
+<div id="infoPanel"  class="fixed top-0 right-0 h-full w-[92%] max-w-sm bg-slate-900/40 glass p-6 rounded-3xl border border-white/10 translate-x-full transition-transform duration-500 z-[2000] overflow-y-auto overflow-x-hidden shadow-2xl">
+  <div class="flex items-center justify-between mb-4 gap-4">
+    <h2 id="locationTitle" class="text-2xl font-semibold neon-text truncate">Location</h2>
+    
+    <button onclick="handleLogout()" class="shrink-0 text-[10px] font-bold uppercase tracking-widest text-red-400 hover:text-red-300 flex items-center gap-2 bg-red-400/10 px-3 py-1.5 rounded-full border border-red-400/20 transition-all hover:bg-red-400/20">
+      <span>Logout</span>
+      <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+    </button>
+  </div>
+
+  <p id="locationSub" class="text-xs text-gray-300 mb-4 -mt-3">--</p>
+  <p id="aqiText" class="text-4xl font-black mb-4">AQI: --</p>
+
+  <div class="grid grid-cols-2 gap-4 text-sm mb-6">
+    <div class="glass p-3 rounded-lg text-center">
+      PM₂.₅ <br><span id="pm25" class="text-xl font-semibold">--</span>
+    </div>
+    <div class="glass p-3 rounded-lg text-center">
+      PM₁₀ <br><span id="pm10" class="text-xl font-semibold">--</span>
+    </div>
+  </div>
+
+  
+  <!-- 🌟 Unified Tab Section (Govt + Citizen UI) -->
+  <div id="uiTabs" class="grid grid-cols-2 gap-3 mb-6">
+   <button class="ui-tab-btn" data-key="staySafe">Health Advisory</button>
+   <button class="ui-tab-btn" data-key="forecast">AQI Forecast</button>
+   <button class="ui-tab-btn" data-key="actions">Directives For GOVT</button>
+
+   <button class="ui-tab-btn" data-key="complaint">Grievances</button>
+   <button class="ui-tab-btn" data-key="policies">Policy Recommendations</button>
+   <button class="ui-tab-btn" data-key="govTask">MCD Actions Taken</button>
+</div>
+  <div class="mt-4">
+    <h3 class="font-semibold mb-2">AQI Trend (24h)</h3>
+    <div id="aqiTrendContainer" class="glass rounded-lg p-3">
+      <svg id="historyGraph" width="100%" height="130"></svg>
+    </div>
+    <div id="ciggsEqBelow" class="text-xs text-gray-300 mt-2"></div>
+  </div>
+
+  <div id="sourceBreakdown" class="mt-6 hidden">
+    <h3 class="font-semibold mb-3 text-emerald-400">🔬 Pollution Sources</h3>
+    <div id="sourceList" class="space-y-2"></div>
+  </div>
+
+  <!-- 🔹 Close Button -->
+  <div class="mt-6">
+    <button id="closePanel" class="mt-4 w-full px-4 py-2 rounded-full bg-white/8 hover:bg-white/12 text-sm">
+      Close
+    </button>
+  </div>
+</div>
+<!-- 💬 FLOATING POPUP PANEL INSIDE MAP (Central Area) -->
+<div id="citizenFloat"
+  class="hidden fixed top-24 bottom-12 left-4 right-4 md:left-[23rem] md:right-[26rem]
+         bg-slate-900/40 glass p-8 rounded-3xl shadow-2xl backdrop-blur-xl
+         border border-white/10 z-[1400] transition-all duration-300 ease-out
+         opacity-0 scale-95 flex flex-col">
+
+  <button id="citizenFloatClose"
+    class="absolute top-4 right-4 text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 rounded-full w-8 h-8 flex items-center justify-center transition-colors">✕</button>
+
+  <h2 id="citizenFloatTitle" class="text-3xl font-bold text-white/90 mb-4 tracking-wide drop-shadow-sm border-b border-white/5 pb-4"></h2>
+
+  <div id="citizenFloatBody"
+       class="text-base leading-relaxed pr-2 overflow-y-auto overflow-x-hidden break-words flex-1 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
+  </div>
+</div>
+
+
+  <!-- live status badge -->
+  <div id="liveAQStatusBar">AQI: —</div>
+
+
+
+<script>
+  /**
+ * Handles the logout process
+ */
+function handleLogout() {
+    // 1. Optional: Clear local storage or session tokens if you are using them
+    // localStorage.removeItem('userToken'); 
+    
+    // 2. Redirect to index/login page
+    window.location.href = 'index.html';
+}
+/* ================== FULL DASHBOARD SCRIPT WITH SPATIAL INTERPOLATION ================== */
+
+
+const map = L.map('map', { 
+    preferCanvas: true,
+    zoomControl: false, 
+    // Smoothness Settings
+    zoomAnimation: true,
+    zoomAnimationThreshold: 10,
+    // Speed Settings
+    zoomSnap: 0,                // Set to 0 for maximum fluid responsiveness
+    wheelPxPerZoomLevel: 10,    // Lower = Faster zoom (was 120)
+    wheelDelta: 1.5,            // Higher = more zoom per scroll click
+    inertia: true,
+    inertiaDeceleration: 3000   // Makes movement stop faster
+}).setView([28.6139, 77.2090], 11);
+
+// Basemap
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap & CARTO'
+}).addTo(map);
+
+// UI Elements
+const loadOverlay = document.getElementById('loadOverlay');
+const loadText = document.getElementById('loadText');
+const infoPanel = document.getElementById('infoPanel');
+const locationTitle = document.getElementById('locationTitle');
+const locationSub = document.getElementById('locationSub');
+const aqiText = document.getElementById('aqiText');
+const pm25El = document.getElementById('pm25');
+const pm10El = document.getElementById('pm10');
+const advisoryEl = document.getElementById('advisory');
+const searchInput = document.getElementById('searchInput');
+const searchBtn = document.getElementById('searchBtn');
+const liveAQStatusBar = document.getElementById('liveAQStatusBar');
+
+function showLoader(msg) {
+  loadText.innerText = msg || 'Loading...';
+  loadOverlay.style.display = 'flex';
+}
+function hideLoader() {
+  loadOverlay.style.display = 'none';
+}
+
+// State variables
+let wardsGeo = null;
+let wardsLayer = null;
+let selectedHighlight = null;
+let tempSearchMarker = null;
+let aqiStations = [];
+let latestWardAQI = null; 
+let latestWardAI = null;
+const stationLayer = L.layerGroup().addTo(map);
+
+
+function pointInsideFeature(pt, feature) {
+  try {
+    if (feature.geometry.type === 'Polygon') {
+      return turf.booleanPointInPolygon(pt, feature);
+    }
+    if (feature.geometry.type === 'MultiPolygon') {
+      return feature.geometry.coordinates.some(coords => {
+        const poly = turf.polygon(coords);
+        return turf.booleanPointInPolygon(pt, poly);
+      });
+    }
+  } catch (e) {}
+  return false;
+}
+
+// Breakpoints for PM2.5 -> AQI
+const PM25_BREAKPOINTS = [
+  { bpLow: 0, bpHigh: 30, aqiLow: 0, aqiHigh: 50 },
+  { bpLow: 31, bpHigh: 60, aqiLow: 51, aqiHigh: 100 },
+  { bpLow: 61, bpHigh: 90, aqiLow: 101, aqiHigh: 200 },
+  { bpLow: 91, bpHigh: 120, aqiLow: 201, aqiHigh: 300 },
+  { bpLow: 121, bpHigh: 250, aqiLow: 301, aqiHigh: 400 },
+  { bpLow: 251, bpHigh: 500, aqiLow: 401, aqiHigh: 500 },
+];
+
+function pm25ToAQI(pm25) {
+  if (pm25 == null || isNaN(pm25)) return null;
+  const c = Math.max(0, Number(pm25));
+  let bp = PM25_BREAKPOINTS.find(b => c >= b.bpLow && c <= b.bpHigh) || PM25_BREAKPOINTS[PM25_BREAKPOINTS.length - 1];
+  const { aqiLow: Ilo, aqiHigh: Ihi, bpLow: BPLo, bpHigh: BPhi } = bp;
+  const I = ((Ihi - Ilo) / (BPhi - BPLo)) * (c - BPLo) + Ilo;
+  return Math.round(I);
+}
+
+function clampAQI(aqi) {
+  if (aqi == null || isNaN(aqi)) return null;
+  const v = Number(aqi);
+  return Math.min(Math.max(Math.round(v), 0), 500);
+}
+
+function getAQIColor(aqi) {
+  if (aqi == null) return '#374151';
+  if (aqi <= 50) return '#16a34a';
+  if (aqi <= 100) return '#eab308';
+  if (aqi <= 200) return '#f97316';
+  if (aqi <= 300) return '#ef4444';
+  if (aqi <= 400) return '#7c2d12';
+  return '#5b0219';
+}
+
+function getAQILabel(aqi) {
+  if (aqi == null) return 'No data';
+  if (aqi > 400) return 'Severe';
+  if (aqi > 300) return 'Very Poor';
+  if (aqi > 200) return 'Poor';
+  if (aqi > 100) return 'Moderate';
+  if (aqi > 50) return 'Satisfactory';
+  return 'Good';
+}
+
+function advisoryForAQI(aqi) {
+  if (aqi == null) return 'No AQI data available.';
+  const note = 'Note: Vulnerable populations include children (especially under 5 years), elderly people, pregnant women, and those with pre-existing respiratory, cardiovascular, or cerebrovascular conditions.';
+  switch (true) {
+    case aqi <= 50:
+      return 'Low risk to health\nNo special precautions needed for anyone\nAll outdoor activities can be done normally';
+    case aqi <= 100:
+      return 'Minor breathing discomfort may occur in vulnerable populations\nGeneral population requires no special precautions\nVulnerable groups should do less prolonged or strenuous outdoor physical exertion\n' + note;
+    case aqi <= 200:
+      return 'Breathing or health-related discomfort may occur in vulnerable populations\nGeneral population should do less prolonged or strenuous outdoor physical exertion\nVulnerable groups should avoid prolonged or strenuous outdoor physical exertion\n' + note;
+    case aqi <= 300:
+      return 'Healthy people may experience breathing discomfort on prolonged exposure\nVulnerable populations experience breathing or health discomfort on short exposure\nGeneral population should avoid outdoor physical exertion\nVulnerable groups must avoid outdoor physical activities completely\n' + note;
+    case aqi <= 400:
+      return 'Healthy people develop respiratory illness on prolonged exposure\nVulnerable populations experience pronounced respiratory or other illnesses on short exposure\nGeneral population should avoid outdoor physical activities, especially during morning and late evening hours\nVulnerable groups must remain indoors and keep activity levels low\n' + note;
+    default:
+      return 'Healthy people develop respiratory illness even on prolonged exposure\nVulnerable populations experience serious respiratory or other illnesses on short exposure\nGeneral population should avoid outdoor physical activities completely\nVulnerable groups must remain indoors and keep activity levels low at all times\n' + note;
+  }
+}
+
+/* ================== CORE SPATIAL ENGINE (NEW) ================== */
+
+function getInterpolatedAQI(lat, lon, stations) {
+  if (!stations || stations.length === 0) return null;
+
+  const stationData = stations.map(s => {
+    const d = turf.distance(turf.point([lon, lat]), turf.point([s.lon, s.lat]), { units: 'kilometers' });
+    const val = s.aqi ?? (s.pm25 ? pm25ToAQI(s.pm25) : null);
+    return { val, dist: d };
+  }).filter(s => s.val !== null);
+
+  if (stationData.length === 0) return null;
+  stationData.sort((a, b) => a.dist - b.dist);
+
+  // If station is right there, use it
+  if (stationData[0].dist < 0.5) return { aqi: Math.round(stationData[0].val), method: 'Direct Reading' };
+
+  // IDW Logic (Inverse Distance Weighting)
+  const nearest = stationData.slice(0, 3);
+  let sumWeight = 0, sumWeightedAQI = 0;
+
+  nearest.forEach(s => {
+    const weight = 1 / Math.pow(s.dist, 2);
+    sumWeight += weight;
+    sumWeightedAQI += s.val * weight;
+  });
+
+  return { 
+    aqi: clampAQI(sumWeightedAQI / sumWeight), 
+    method: 'Spatial Interpolation' 
+  };
+}
+
+/* ================== BACKEND & DATA PROCESSING ================== */
+
+// Define this globally if you haven't already
+const REMOTE_SERVER_URL = 'https://vito-glabellar-semijudicially.ngrok-free.dev';
+const LOCAL_BACKEND_URL = 'http://localhost:3000';
+
+async function fetchAQIFromBackend() {
+  // 1. Prepare clean base URLs
+  const remoteBase = REMOTE_SERVER_URL.replace(/\/$/, ''); // Remove trailing slash
+  
+  // 2. Define all possible places your API might be running
+  // Order matters: Try local first (faster), then remote.
+  const endpoints = [
+    '/api/aqi',                           // Relative path (if serving from same origin)
+    'http://localhost:3000/api/aqi',      // Local development
+    `${remoteBase}/api/aqi`               // Remote/Ngrok tunnel
+  ];
+
+  console.log("Attempting to fetch AQI data...");
+
+  for (const url of endpoints) {
+    try {
+      // 3. Fetch with the CRITICAL headers included
+      const r = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'ngrok-skip-browser-warning': 'true', // <--- KEEPS THIS from your code
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (r.ok) {
+        const data = await r.json();
+        console.log(`Connected to: ${url}`);
+        return data;
+      }
+    } catch (err) {
+      // Log quietly to avoid console spam, or debug if needed
+      // console.warn(`Skipping ${url}:`, err.message);
+    }
+  }
+
+  throw new Error('All backend endpoints failed to return AQI data.');
+}
+function normalizeToStationPoints(payload) {
+    const points = [];
+    const data = Array.isArray(payload) ? payload : [];
+    
+    data.forEach(item => {
+        let lat = item.lat;
+        let lon = item.lon;
+        if (lat == null || lon == null) return;
+
+        // Convert AQI string to a number
+        let aqiVal = item.aqi ? Number(item.aqi) : null;
+        
+        // 🔴 FIX: If PM values are missing in your JSON, we estimate them
+        // This prevents the "0" showing up on your dashboard
+        let pm25 = item.pm25 || (aqiVal ? estimatePM25(aqiVal) : null);
+        let pm10 = item.pm10 || (aqiVal ? estimatePM10(aqiVal) : null);
+
+        points.push({
+            id: item.uid || `${lat},${lon}`,
+            lat: Number(lat), 
+            lon: Number(lon),
+            aqi: aqiVal,
+            pm25: pm25,
+            pm10: pm10
+        });
+    });
+    return points;
+}
+
+// Helper functions to estimate PM if missing
+function estimatePM25(aqi) {
+    // Basic linear estimation of PM2.5 based on AQI breakpoints
+    if (aqi <= 50) return (aqi / 50) * 12;
+    if (aqi <= 100) return 12 + ((aqi - 50) / 50) * 23;0
+    if (aqi <= 200) return 35 + ((aqi - 100) / 100) * 115;
+    return (aqi / 500) * 250; // Rough estimate for high values
+}
+
+function estimatePM10(aqi) {
+    return estimatePM25(aqi) * 1.6; // Typical PM10 is roughly 1.6x PM2.5 in Delhi
+}
+
+function filterStationsInsideDelhi(stations) {
+  if (!wardsGeo?.features) return stations;
+  return stations.filter(s => {
+    const pt = turf.point([s.lon, s.lat]);
+    return wardsGeo.features.some(f => pointInsideFeature(pt, f));
+  });
+}
+
+function renderAQIStationsOnMap(stationPoints) {
+  stationLayer.clearLayers();
+  stationPoints.forEach(st => {
+    const aqi = st.aqi ?? pm25ToAQI(st.pm25);
+    if (!aqi) return;
+    L.circleMarker([st.lat, st.lon], {
+      radius: 6, fillColor: getAQIColor(aqi), color: '#fff', weight: 1, fillOpacity: 0.9
+    }).bindPopup(`Station AQI: ${aqi}`).addTo(stationLayer);
+  });
+}
+
+/* ================== MAIN INTEGRATION ================== */
+
+async function integrateLiveAQIntoWards() {
+  if (!wardsGeo) return;
+  showLoader('Syncing Delhi Air Quality...');
+
+  try {
+    // 1. Fetch Data ONCE
+    const payload = await fetchAQIFromBackend();
+    const allPoints = normalizeToStationPoints(payload);
+    aqiStations = filterStationsInsideDelhi(allPoints);
+    renderAQIStationsOnMap(aqiStations);
+
+    // 2. Calculate City Averages (For the initial Left Panel view)
+    let sumAQI = 0, sumPM25 = 0, sumPM10 = 0;
+    let countAQI = 0, countPM25 = 0, countPM10 = 0;
+    
+    aqiStations.forEach(s => {
+        const a = s.aqi ?? pm25ToAQI(s.pm25);
+        if (a) { sumAQI += a; countAQI++; }
+        if (s.pm25) { sumPM25 += s.pm25; countPM25++; }
+        if (s.pm10) { sumPM10 += s.pm10; countPM10++; }
+    });
+
+    const avgAQI = countAQI ? Math.round(sumAQI / countAQI) : 0;
+    const avgPM25 = countPM25 ? Math.round(sumPM25 / countPM25) : 0;
+    const avgPM10 = countPM10 ? Math.round(sumPM10 / countPM10) : 0;
+
+    // Update Left Panel with City Average immediately
+    updateWardUI({ 
+        aqi: avgAQI, 
+        pm25: avgPM25, 
+        pm10: avgPM10 
+    });
+    
+    liveAQStatusBar.innerText = `Live: Delhi Avg AQI ${avgAQI}`;
+
+    // 3. Interpolate and SAVE data into every Ward Polygon
+    wardsGeo.features.forEach(f => {
+      const centroid = turf.pointOnFeature(f).geometry.coordinates;
+      const result = getInterpolatedAQI(centroid[1], centroid[0], aqiStations);
+      
+      if (result) {
+        f.properties.aqi = result.aqi;
+        // 🟢 NEW: Save estimated PM values into the feature right now
+        f.properties.pm25 = estimatePM25(result.aqi);
+        f.properties.pm10 = estimatePM10(result.aqi);
+        f.properties._aqi_method = result.method;
+      } else {
+        f.properties.aqi = clampAQI(avgAQI);
+        f.properties.pm25 = avgPM25;
+        f.properties.pm10 = avgPM10;
+        f.properties._aqi_method = 'City Average';
+      }
+    });
+
+    // 4. Color the map
+    if (wardsLayer) {
+      wardsLayer.eachLayer(layer => {
+        const a = layer.feature.properties.aqi;
+        layer.setStyle({ fillColor: getAQIColor(a), fillOpacity: 0.4 });
+      });
+    }
+    // Render initial trend if available (uses interpolated AQs saved in features)
+    if (typeof window.renderHistoryTrend === 'function' && Array.isArray(payload?.history_24h)) {
+      window.renderHistoryTrend(payload.history_24h);
+    }
+    
+  } catch (err) {
+    console.error(err);
+    liveAQStatusBar.innerText = 'Live fetch failed.';
+  } finally {
+    hideLoader();
+  }
+}
+/* ================== SEARCH & INTERACTION ================== */
+
+/* ================== UPDATED SEARCH & INTERACTION ================== */
+
+
+
+  async function onWardSelected(feature, layer) {
+    // --- 1. UI HIGHLIGHTING ---
+    if (selectedHighlight) map.removeLayer(selectedHighlight);
+    selectedHighlight = L.geoJSON(feature, {
+        style: { color: '#00eeff', weight: 4, fillOpacity: 0.3 }
+    }).addTo(map);
+
+    const bounds = layer ? layer.getBounds() : L.geoJSON(feature).getBounds();
+    map.flyToBounds(bounds, { padding: [50, 50], duration: 1 });
+
+    // --- 2. PREPARE LOCAL DATA ---
+    const wardId = feature.properties.Ward_No;
+    const wardName = feature.properties.WardName || "Unknown Ward";
+    window.latestWardId = wardId;
+    window.latestWardName = wardName;
+    
+    // Set global AQI immediately for the tabs
+    latestWardAQI = feature.properties.aqi || 0;
+    latestWardAI = null; // Clear previous ward's AI data
+    window.latestCigarettes = null; // Clear previous data
+
+    if (typeof locationTitle !== 'undefined') locationTitle.innerText = wardName;
+    if (typeof locationSub !== 'undefined') locationSub.innerText = `Ward Number: ${wardId} `;
+    if (typeof infoPanel !== 'undefined') infoPanel.classList.remove('translate-x-full');
+
+    const localData = {
+        aqi: latestWardAQI,
+        pm25: feature.properties.pm25 || 0,
+        pm10: feature.properties.pm10 || 0,
+        analysis: null
+    };
+
+    // Render immediately
+    updateWardUI(localData);
+
+    // --- 3. FETCH & MERGE ---
+    if (wardId) {
+        try {
+            const baseUrl = REMOTE_SERVER_URL.replace(/\/$/, '');
+            const response = await fetch(`${baseUrl}/api/ward-analysis/${wardId}`, {
+                headers: { 'ngrok-skip-browser-warning': 'true' }
+            });
+
+            const data = await response.json();
+
+  if (data.success) {
+                // ✅ CORRECT PLACE TO SAVE DATA GLOBALLY
+                latestWardAI = data.analysis; 
+                window.latestForecast24h = data.forecast_24h || [];
+                window.latestCigarettes = data.cigarettes_count; // Store cigarettes count globally
+
+                const mergedData = {
+                    aqi: latestWardAQI, 
+                    pm25: data.raw_pollutants?.pm2_5 || localData.pm25,
+                    pm10: data.raw_pollutants?.pm10 || localData.pm10,
+                    analysis: data.analysis,
+                    history_24h: data.history_24h || [],
+                    cigarettes_count: data.cigarettes_count // Pass to UI update
+                };
+
+                updateWardUI(mergedData);
+
+                if (window.updateCharts && data.history_24h) {
+                    window.updateCharts(data.history_24h, data.forecast_24h);
+                }
+            }
+        } catch (err) {
+            console.error("Background fetch failed:", err);
+        }
+    }
+}
+function updateWardUI(data) {
+    // 1. Extract Values
+    const aqi = data.current_aqi || data.aqi || 0;
+    const pm25 = data.pm25 || (data.raw_pollutants ? data.raw_pollutants.pm2_5 : 0);
+    const pm10 = data.pm10 || (data.raw_pollutants ? data.raw_pollutants.pm10 : 0);
+    const aiAnalysis = data.analysis || null;
+    const cigarettes = data.cigarettes_count || (aqi / 22).toFixed(1);
+
+
+    // 2. Visual Colors/Labels
+    const color = getAQIColor(aqi);
+    const label = getAQILabel(aqi);
+
+    // --- LEFT DASHBOARD UPDATES ---
+    const bigAQI = document.getElementById('bigAQI');
+    if (bigAQI) {
+        bigAQI.innerText = aqi > 0 ? aqi : "---";
+        bigAQI.style.color = color;
+    }
+
+    const badge = document.getElementById('statusBadge');
+    if (badge) {
+        badge.innerText = label;
+        badge.style.color = color;
+        badge.style.backgroundColor = color + '22';
+        badge.style.borderColor = color + '44';
+    }
+
+    const needle = document.getElementById('aqiNeedle');
+    if (needle) {
+        const percentage = Math.max(0, Math.min((aqi / 500) * 100, 100));
+        needle.style.left = `${percentage}%`;
+    }
+
+    // --- RIGHT INFO PANEL UPDATES ---
+    if (typeof aqiText !== 'undefined') {
+        aqiText.innerText = `AQI: ${aqi > 0 ? aqi : '--'} - ${label}`;
+        aqiText.style.color = color;
+    }
+
+    // Update PM values
+    const pm25Val = pm25 > 0 ? Number(pm25).toFixed(1) : '--';
+    const pm10Val = pm10 > 0 ? Number(pm10).toFixed(1) : '--';
+    ['val-pm25', 'pm25'].forEach(id => { if(document.getElementById(id)) document.getElementById(id).innerText = pm25Val; });
+    ['val-pm10', 'pm10'].forEach(id => { if(document.getElementById(id)) document.getElementById(id).innerText = pm10Val; });
+
+    // --- ADVISORY & CIGARETTES LOGIC ---
+    // Note: Sidebar text advisory removed as per request. Only shown in popup now.
+    
+    const cigDiv = document.getElementById('ciggsEqBelow');
+
+    if (cigDiv) {
+        cigDiv.innerHTML = `
+            <div class="flex items-center justify-center gap-2">
+               <span>🚬</span>
+               <span>Air quality ≈ smoking <strong class="text-white">${cigarettes}</strong> cigarettes/day</span>
+            </div>
+        `;
+        cigDiv.className = "text-xs mt-3 font-mono p-2 rounded text-center";
+        cigDiv.style.color = color;
+        cigDiv.style.backgroundColor = color + '22';
+        cigDiv.style.border = '1px solid ' + (color + '44');
+        cigDiv.style.boxShadow = '0 0 10px ' + (color + '22');
+    }
+// --- NEW: POLLUTION SOURCE BARS ---
+const sourceContainer = document.getElementById('sourceBreakdown');
+const sourceListEl = document.getElementById('sourceList');
+
+// data.analysis contains the JSON object from your backend
+if (latestWardAI && latestWardAI.source_breakdown) {
+        sourceContainer.classList.remove('hidden');
+        sourceListEl.innerHTML = latestWardAI.source_breakdown.map(item => `
+            <div class="space-y-1 mt-4">
+                <div class="flex justify-between text-[10px] uppercase font-bold tracking-widest text-slate-400">
+                    <span>${item.source} (${item.major_pollutant})</span>
+                    <span class="text-emerald-400 font-mono">${item.contribution_percent}%</span>
+                </div>
+                <div class="h-1.5 w-full bg-white/5 rounded-full overflow-hidden border border-white/5">
+                    <div class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 transition-all duration-1000" 
+                         style="width: ${item.contribution_percent}%"></div>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        sourceContainer.classList.add('hidden');
+    }
+    // --- TREND GRAPH LOGIC ---
+    if (Array.isArray(data.history_24h) && typeof window.renderHistoryTrend === 'function') {
+        // Timeout ensures the side panel is visible so the SVG can calculate its width
+        setTimeout(() => {
+            window.renderHistoryTrend(data.history_24h);
+        }, 200);
+    }
+}
+// --- TAB CLICK HANDLER & DYNAMIC POPUP ---
+document.querySelectorAll('.ui-tab-btn').forEach(btn => {
+  btn.onclick = () => {
+    const key = btn.getAttribute('data-key');
+    const title = btn.innerText;
+    
+    const body = document.getElementById('citizenFloatBody');
+    const floatTitle = document.getElementById('citizenFloatTitle');
+    
+    // Clear previous content
+    body.innerHTML = ''; 
+    floatTitle.innerText = title;
+
+    // Check if we have the AI data from the backend
+    if (!latestWardAI) {
+      body.innerHTML = `
+        <div class="flex flex-col items-center justify-center h-full text-slate-400 italic">
+          <p>No deep insights available for this ward yet.</p>
+          <p class="text-xs mt-2">Select a ward on the map to load data.</p>
+        </div>`;
+    } else {
+      // Map the backend JSON fields to the UI Tabs
+      switch(key) {
+        case 'staySafe':
+          body.innerHTML = `
+            <div class="space-y-4">
+              <div class="bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/20">
+                <h4 class="text-emerald-400 font-bold uppercase text-xs mb-2">Health Summary</h4>
+                <p class="text-slate-200 leading-relaxed">${latestWardAI.impact_summary}</p>
+              </div>
+              <div class="bg-blue-500/10 p-4 rounded-xl border border-blue-500/20">
+                <h4 class="text-blue-400 font-bold uppercase text-xs mb-2">Citizen Mitigation</h4>
+                <p class="text-slate-200 leading-relaxed">${latestWardAI.citizen_mitigation}</p>
+              </div>
+            </div>`;
+          break;
+
+        case 'forecast':
+          body.innerHTML = `
+            <div class="bg-slate-800/50 p-6 rounded-2xl border border-white/10">
+              <p class="text-slate-300 italic mb-4">Future projections based on current pollutant levels:</p>
+              <p class="text-lg text-white font-medium">${latestWardAI.impact_summary}</p>
+            </div>`;
+          break;
+
+        case 'policies':
+          body.innerHTML = `
+            <div class="bg-purple-500/10 p-6 rounded-2xl border border-purple-500/20">
+              <h4 class="text-purple-400 font-bold uppercase text-xs mb-3 tracking-widest">Policy Recommendations</h4>
+              <p class="text-slate-200 leading-relaxed italic text-lg">"${latestWardAI.policy_recommendations}"</p>
+            </div>`;
+          break;
+
+        case 'actions':
+          body.innerHTML = `
+            <div class="bg-orange-500/10 p-6 rounded-2xl border border-orange-500/20">
+              <h4 class="text-orange-400 font-bold uppercase text-xs mb-3 tracking-widest">Government Directives</h4>
+              <p class="text-slate-200 leading-relaxed">${latestWardAI.govt_mitigation}</p>
+            </div>`;
+          break;
+          
+        case 'complaint':
+          // This keeps your existing Grievance functionality working
+          if(typeof wireGrievanceUI === 'function') {
+            wireGrievanceUI();
+            return; 
+          }
+          break;
+      }
+    }
+
+    // Show the popup
+    const float = document.getElementById('citizenFloat');
+    float.classList.remove('hidden');
+    setTimeout(() => float.classList.remove('opacity-0', 'scale-95'), 10);
+  };
+});
+
+// Close Popup Handler
+document.getElementById('citizenFloatClose').onclick = () => {
+  const float = document.getElementById('citizenFloat');
+  float.classList.add('opacity-0', 'scale-95');
+  setTimeout(() => float.classList.add('hidden'), 300);
+};
+// ============ GRAPH RENDERERS ============
+// Utility: map AQI to Y (0..500 -> 160..20)
+function aqiToY(aqi, h) {
+  const minY = 20, maxY = h - 20;
+  const v = Math.max(0, Math.min(500, Number(aqi || 0)));
+  const pct = v / 500;
+  return maxY - pct * (maxY - minY);
+}
+function hourLabel(ts) {
+  try { 
+    const d = new Date(Number(ts) * 1000);
+    const h = d.getHours().toString().padStart(2, '0');
+    const m = d.getMinutes().toString().padStart(2, '0');
+    return `${h}:${m}`;
+  } catch { return '--'; }
+}
+function labelFromTime(t) {
+  return typeof t === 'string' ? t : hourLabel(t || 0);
+}
+function renderColoredLine(svgEl, points, w, h) {
+  while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+  const padL = 35, padR = 10;
+  
+  // --- Task 3: Y-axis Labels (Intervals of 50) ---
+  for (let aqi = 0; aqi <= 500; aqi += 50) {
+    const y = aqiToY(aqi, h);
+    
+    // Faint grid lines for main intervals (0, 100, 200, etc.)
+    if (aqi % 100 === 0 || aqi === 500) { 
+       const grid = document.createElementNS("http://www.w3.org/2000/svg", "line");
+       grid.setAttribute("x1", padL); grid.setAttribute("y1", y);
+       grid.setAttribute("x2", w - padR); grid.setAttribute("y2", y);
+       grid.setAttribute("stroke", "#ffffff15"); 
+       grid.setAttribute("stroke-dasharray", "2,2");
+       svgEl.appendChild(grid);
+    }
+    
+    // Label
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t.setAttribute("x", padL - 5);
+    t.setAttribute("y", y + 3); 
+    t.setAttribute("fill", "#64748B"); // Slate-500
+    t.setAttribute("font-size", "9");
+    t.setAttribute("text-anchor", "end");
+    t.textContent = aqi;
+    svgEl.appendChild(t);
+  }
+
+  const n = points.length;
+  if (!n) return;
+  const stepX = (w - padL - padR) / Math.max(1, n - 1);
+  for (let i = 0; i < n - 1; i++) {
+    const p1 = points[i], p2 = points[i + 1];
+    const x1 = padL + i * stepX, x2 = padL + (i + 1) * stepX;
+    const y1 = aqiToY(p1.aqi, h), y2 = aqiToY(p2.aqi, h);
+    const stroke = getAQIColor(Math.round((p1.aqi + p2.aqi) / 2));
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", x1); line.setAttribute("y1", y1);
+    line.setAttribute("x2", x2); line.setAttribute("y2", y2);
+    line.setAttribute("stroke", stroke);
+    line.setAttribute("stroke-width", "3");
+    line.setAttribute("stroke-linecap", "round");
+    svgEl.appendChild(line);
+  }
+  // X-axis hour ticks
+  for (let i = 0; i < n; i += 4) {
+    const x = padL + i * stepX;
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t.setAttribute("x", x);
+    t.setAttribute("y", h - 4);
+    t.setAttribute("fill", "#9CA3AF");
+    t.setAttribute("font-size", "10");
+    t.setAttribute("text-anchor", "middle");
+    t.textContent = points[i].label || labelFromTime(points[i].time || 0);
+    svgEl.appendChild(t);
+  }
+}
+window.renderHistoryTrend = function(history24h) {
+  try {
+    const svg = document.getElementById('historyGraph');
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const w = Math.max(400, rect.width || 600);
+    const h = Math.max(160, rect.height || 180);
+    const pts = history24h.map(x => ({ aqi: Number(x.aqi || 0), time: x.time }));
+    renderColoredLine(svg, pts, w, h);
+  } catch (e) { /* no-op */ }
+};
+window.renderForecastTrend = function(forecast24h) {
+  try {
+    const svg = document.getElementById('forecastGraph');
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const w = Math.max(400, rect.width || 600);
+    const h = Math.max(160, rect.height || 180);
+  const pts = forecast24h.map(x => ({ aqi: Number(x.aqi || 0), time: x.time, label: labelFromTime(x.time) }));
+  renderColoredLine(svg, pts, w, h);
+  } catch (e) { /* no-op */ }
+};
+map.on('click', (e) => {
+  const { lat, lng } = e.latlng;
+  placeTempMarker([lat, lng], 'Selected Location');
+  
+  const feat = findWardAtLatLng(lat, lng);
+  if (feat) {
+    // UPDATED: No need to call fitBounds here anymore, 
+    // onWardSelected now handles the smooth flying/zooming.
+    const layer = findLayerForFeature(feat);
+    onWardSelected(feat, layer);
+  } else {
+    // Outside ward click - Fly to the point and show IDW data
+    map.flyTo([lat, lng], map.getZoom() < 12 ? 13 : map.getZoom(), {
+      duration: 0.8
+    });
+
+    const res = getInterpolatedAQI(lat, lng, aqiStations);
+    locationTitle.innerText = 'Outside Ward Boundary';
+    locationSub.innerText = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    const a = res ? res.aqi : null;
+    aqiText.innerText = a ? `AQI: ${a} (Interpolated)` : 'AQI: --';
+    aqiText.style.color = getAQIColor(a);
+    advisoryEl.innerText = advisoryForAQI(a);
+    infoPanel.classList.remove('translate-x-full');
+  }
+});
+
+/* ================== HELPERS & INITIALIZATION ================== */
+
+function findWardAtLatLng(lat, lng) {
+  if (!wardsGeo) return null;
+  const pt = turf.point([lng, lat]);
+  return wardsGeo.features.find(f => pointInsideFeature(pt, f));
+}
+
+function findLayerForFeature(feature) {
+  if (!wardsLayer) return null;
+  let found = null;
+  wardsLayer.eachLayer(l => {
+    if (JSON.stringify(l.feature.geometry) === JSON.stringify(feature.geometry)) found = l;
+  });
+  return found;
+}
+
+function placeTempMarker(coords, title) {
+  if (tempSearchMarker) map.removeLayer(tempSearchMarker);
+  tempSearchMarker = L.circleMarker(coords, { radius: 8, color: '#fff', fillColor: '#000', fillOpacity: 0.5 }).addTo(map);
+}
+
+async function handleSearch() {
+  const q = searchInput.value.trim();
+  if (!q) return;
+  
+  // --- Task 1: Numeric Ward Search Check ---
+  // If input is purely numerical, prioritize searching by Ward_No
+  let local = null;
+  const isNumeric = /^\d+$/.test(q);
+
+  if (isNumeric && wardsGeo) {
+    // Try to find a ward with matching Ward_No (converting both to strings for safety)
+    local = wardsGeo.features.find(f => String(f.properties.Ward_No) === q);
+  }
+
+  // If not numeric or not found by number, fall back to name search
+  if (!local) {
+    const ql = q.toLowerCase();
+    local = wardsGeo?.features.find(f => (f.properties.name || '').toLowerCase().includes(ql));
+  }
+  
+  if (local) {
+    const layer = findLayerForFeature(local);
+    if (layer) map.fitBounds(layer.getBounds());
+    onWardSelected(local, null);
+  } else {
+    showLoader('Searching...');
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q + ', Delhi')}`);
+    const res = await resp.json();
+    hideLoader();
+    if (res.length) {
+      const { lat, lon } = res[0];
+      const plat = parseFloat(lat), plon = parseFloat(lon);
+      map.flyTo([plat, plon], 13, {
+    animate: true,
+    duration: 0.8, // Duration in seconds
+    easeLinearity: 0.1
+});
+      const ward = findWardAtLatLng(plat, plon);
+      if (ward) onWardSelected(ward, null);
+    }
+  }
+}
+
+searchInput.addEventListener('keydown', (e) => e.key === 'Enter' && handleSearch());
+searchBtn.addEventListener('click', handleSearch);
+
+async function loadWardShapes() {
+  const urls = ['delhi_wards.geojson', 'https://raw.githubusercontent.com/HindustanTimesLabs/shapefiles/master/city/delhi/ward/delhi_ward.kml'];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      if (url.endsWith('.kml')) {
+        const text = await r.text();
+        return toGeoJSON.kml(new DOMParser().parseFromString(text, 'text/xml'));
+      }
+      return await r.json();
+    } catch (e) {}
+  }
+  return null;
+}
+
+function renderWardsGeoJSON(gj) {
+  wardsGeo = gj;
+  wardsGeo.features.forEach((f, i) => {
+    if (!f.properties) f.properties = {};
+    f.properties.name = f.properties.name || f.properties.WARD_NAME || `Ward ${i+1}`;
+  });
+
+  wardsLayer = L.geoJSON(wardsGeo, {
+    style: { color: '#94a3b8', weight: 1, opacity: 0.5, fillColor: '#374151', fillOpacity: 0.1 },
+    onEachFeature: (f, l) => {
+      l.on('click', (e) => { L.DomEvent.stopPropagation(e); onWardSelected(f, l); });
+    }
+  }).addTo(map);
+}
+
+(async function init() {
+  const gj = await loadWardShapes();
+  if (gj) {
+    renderWardsGeoJSON(gj);
+    map.fitBounds(wardsLayer.getBounds());
+    await integrateLiveAQIntoWards();
+  } else {
+    alert('Ward data not found.');
+  }
+})();
+
+document.getElementById('closePanel').addEventListener('click', () => infoPanel.classList.add('translate-x-full'));
+
+// End of script
+
+/* ================== UI INTERACTION LOGIC ================== */
+
+// 1. Select the Elements
+const uiTabBtns = document.querySelectorAll('.ui-tab-btn');
+const citizenFloat = document.getElementById('citizenFloat');
+const citizenFloatTitle = document.getElementById('citizenFloatTitle');
+const citizenFloatBody = document.getElementById('citizenFloatBody');
+const citizenFloatClose = document.getElementById('citizenFloatClose');
+
+// 2. Define Content for each button
+const tabData = {
+  staySafe: {
+    title: "Health Advisory",
+    body: `
+      <div class="space-y-3 text-slate-300">
+        <p><strong class="text-emerald-400">Primary Recommendation:</strong> Limit outdoor exposure. Susceptible groups (children, elderly, those with respiratory conditions) should remain indoors.</p>
+        <ul class="list-disc pl-5 space-y-1 text-slate-400 marker:text-emerald-500">
+          <li><strong class="text-emerald-400">Protective Equipment:</strong> N95/N99 respirators are recommended for unavoidable outdoor travel.</li>
+          <li><strong class="text-emerald-400">Indoor Air Quality:</strong> Utilize air purification systems where available. Keep ventilation points sealed during peak pollution hours.</li>
+          <li><strong class="text-emerald-400">Physical Exertion:</strong> Avoid strenuous activities outdoors to minimize inhalation of particulate matter.</li>
+        </ul>
+      </div>`
+  },
+  forecast: {
+    title: "AQI Forecast",
+    body: `
+      <div class="space-y-3 text-slate-300">
+        <div class="glass rounded-lg p-3">
+          <svg id="forecastGraph" width="100%" height="180"></svg>
+        </div>
+        <div id="forecastSummary" class="grid grid-cols-2 gap-3">
+          <div class="glass rounded-lg p-3">
+            <div class="text-sm font-semibold text-emerald-400 mb-1">Minimum AQI</div>
+            <div id="minAqiPacket" class="text-black text-sm bg-white rounded px-2 py-1 inline-block"></div>
+          </div>
+          <div class="glass rounded-lg p-3">
+            <div class="text-sm font-semibold text-emerald-400 mb-1">Maximum AQI</div>
+            <div id="maxAqiPacket" class="text-black text-sm bg-white rounded px-2 py-1 inline-block"></div>
+          </div>
+        </div>
+      </div>`
+  },
+  actions: {
+    title: "Directives For GOVT",
+    body: `
+      <div class="space-y-3 text-slate-300">
+        <p>Citizens are requested to adhere to the following measures to assist in pollution mitigation:</p>
+        <ul class="list-disc pl-5 space-y-1 text-slate-400 marker:text-emerald-500">
+          <li><strong class="text-emerald-400">Vehicular:</strong> Utilize public transport or carpooling. Ensure valid PUC certification.</li>
+          <li><strong class="text-emerald-400">Dust Control:</strong> Sprinkle water on premises to suppress dust resuspension.</li>
+          <li><strong class="text-emerald-400">Waste Management:</strong> Strictly no burning of biomass or solid waste. Report violations immediately.</li>
+        </ul>
+      </div>`
+  },
+  complaint: {
+    title: "Grievance Redressal",
+    body: `
+      <div class="space-y-3 text-slate-300">
+        <p>Report environmental violations (garbage burning, construction dust, industrial emissions) directly to the Central Control Room.</p>
+        <div class="bg-slate-900/50 p-3 rounded border border-emerald-500/30">
+          <p><strong class="text-emerald-400">Green Delhi Helpline:</strong> <a href="tel:1800118600" class="text-emerald-300 hover:underline">1800-11-8600</a></p>
+          <p class="mt-1"><strong class="text-emerald-400">Web Portal:</strong> <span class="text-slate-300">greendelhi.gov.in</span></p>
+        </div>
+      </div>`
+  },
+  policies: {
+    title: "Regulatory Measures (GRAP)",
+    body: `
+      <div class="space-y-3 text-slate-300">
+        <p><strong class="text-emerald-400">Active Stage: GRAP Stage-IV (Severe+)</strong></p>
+        <ul class="list-disc pl-5 space-y-1 text-slate-400 marker:text-emerald-500">
+          <li><strong class="text-emerald-400">Transport:</strong> Entry of heavy goods vehicles (except essentials) is prohibited.</li>
+          <li><strong class="text-emerald-400">Construction:</strong> Total ban on C&D activities, including linear public projects.</li>
+          <li><strong class="text-emerald-400">Institutions:</strong> Schools closed for physical classes (up to Class IX).</li>
+          <li><strong class="text-emerald-400">Workforce:</strong> 50% capacity for public/private offices recommended.</li>
+        </ul>
+      </div>`
+  },
+  govTask: {
+    title: "MCD Actions Taken",
+    body: `
+      <div class="space-y-3 text-slate-300">
+        <p><strong class="text-emerald-400">Real-time Action Report (Daily):</strong></p>
+        <div class="grid grid-cols-2 gap-2 text-center">
+          <div class="bg-slate-900/50 p-2 rounded border border-emerald-500/30">
+            <div class="text-lg font-bold text-emerald-400">450</div>
+            <div class="text-xs text-slate-400">Water Sprinklers</div>
+          </div>
+          <div class="bg-slate-900/50 p-2 rounded border border-emerald-500/30">
+            <div class="text-lg font-bold text-emerald-400">12</div>
+            <div class="text-xs text-slate-400">Anti-Smog Guns</div>
+          </div>
+        </div>
+        <p class="text-xs text-emerald-500/70 mt-2">Data updated: 08:00 AM IST</p>
+      </div>`
+  }
+};
+
+// 3. Add Click Listeners to Open the Panel
+uiTabBtns.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    const key = btn.getAttribute('data-key');
+    const data = tabData[key];
+    let title = data?.title || '';
+    let body = data?.body || '';
+    
+    if (key === 'staySafe') {
+      title = 'Health Advisory';
+      const a = latestWardAQI;
+      const ai = latestWardAI;
+      const cigs = window.latestCigarettes || (a / 22).toFixed(1);
+      const color = getAQIColor(a);
+      
+      if (ai && !ai.error) {
+        body = `<div class="space-y-4 text-slate-300">
+            <div class="p-4 rounded-xl" style="background-color:${color}22;border:1px solid ${color}44;">
+              <p class="text-emerald-400 font-bold mb-1">⚠️ Cigarette Equivalent</p>
+              <p class="text-2xl font-bold text-white">Breathing this air is like smoking <strong>${cigs}</strong> cigarettes today.</p>
+            </div>
+            <div class="space-y-2">
+              <p class="font-semibold text-emerald-400">Health Impact Summary:</p>
+              <p class="text-sm leading-relaxed" style="color:${color}">${ai.impact_summary}</p>
+            </div>
+          </div>`;
+      }
+    } else if (key === 'policies') {
+      title = 'Policy Recommendations (Govt View)';
+      body = `<div class="glass p-3 rounded-xl border border-white/10 animate-pulse text-sm text-slate-300">Loading policy recommendations...</div>`;
+      const wardId = window.latestWardId;
+      const baseUrl = REMOTE_SERVER_URL.replace(/\/$/, '');
+      setTimeout(async () => {
+        try {
+          const t0 = performance.now();
+          const r = await fetch(`${baseUrl}/api/ward-analysis/${wardId}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+          const ms = Math.round(performance.now() - t0);
+          const json = await r.json();
+          const pr = json && json.analysis && json.analysis.policy_recommendations;
+          let html = '';
+          if (Array.isArray(pr)) {
+            html = pr.map(rec => `
+              <div class="glass p-3 rounded-xl border border-white/10">
+                <h3 class="text-base font-semibold text-white/90">${rec.name || rec.title || 'Recommendation'}</h3>
+                ${rec.description ? `<p class="text-xs text-slate-300 mt-2">${rec.description}</p>` : ''}
+              </div>
+            `).join('');
+          } else if (typeof pr === 'string' && pr.trim()) {
+            html = `
+              <div class="glass p-3 rounded-xl border border-white/10">
+                <p class="text-sm text-slate-200">${pr}</p>
+              </div>
+            `;
+          } else {
+            html = `<div class="text-slate-300">No recommendations available.</div>`;
+          }
+          html += `<div class="mt-3 text-xs text-slate-500">Fetched in ${ms} ms</div>`;
+          citizenFloatBody.innerHTML = html;
+        } catch (e) {
+          citizenFloatBody.innerHTML = `<div class="glass p-3 rounded-xl border border-red-400/30 text-sm text-red-300">Failed to load policy recommendations.</div>`;
+        }
+      }, 0);
+    } else if (key === 'actions') {
+      title = 'Government Directives';
+      const wardId = window.latestWardId;
+      const baseUrl = REMOTE_SERVER_URL.replace(/\/$/, '');
+      body = `<div class="glass p-3 rounded-xl border border-white/10 animate-pulse text-sm text-slate-300">Loading directives...</div>`;
+      setTimeout(async () => {
+        try {
+          const t0 = performance.now();
+          const r = await fetch(`${baseUrl}/api/ward-analysis/${wardId}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+          if (!r.ok) throw new Error('http ' + r.status);
+          const json = await r.json();
+          const gm = json && json.analysis && json.analysis.govt_mitigation;
+          let html = '';
+          if (typeof gm === 'string' && gm.trim()) {
+            html = `<div class="glass p-3 rounded-xl border border-white/10"><p class="text-sm leading-relaxed text-slate-200">${gm}</p></div>`;
+          } else if (Array.isArray(gm) && gm.length) {
+            html = gm.map(x => {
+              if (typeof x === 'string') {
+                return `<div class="glass p-3 rounded-xl border border-white/10"><p class="text-sm text-slate-200">${x}</p></div>`;
+              } else if (x && typeof x === 'object') {
+                const vals = Object.values(x).filter(v => typeof v === 'string' && v.trim()).map(v => `<div class="text-xs text-slate-300">${v}</div>`).join('');
+                return `<div class="glass p-3 rounded-xl border border-white/10">${vals}</div>`;
+              } else {
+                return '';
+              }
+            }).join('');
+          } else {
+            html = `<div class="text-slate-300 text-sm">No government mitigation data available.</div>`;
+          }
+          html += `<div class="mt-2 text-xs text-slate-500">Fetched in ${Math.round(performance.now()-t0)} ms</div>`;
+          citizenFloatBody.innerHTML = html;
+        } catch (e) {
+          citizenFloatBody.innerHTML = `<div class="glass p-3 rounded-xl border border-red-400/30 text-sm text-red-300">Failed to load directives.</div>`;
+        }
+      }, 0);
+    } else if (key === 'complaint') {
+      title = 'Grievances (Govt View)';
+      body = `<div class="space-y-4">
+                <p class="text-sm text-slate-400 italic">Reviewing reports for: ${locationTitle.innerText}</p>
+                <div id="grievList" class="space-y-2 max-h-[400px] overflow-y-auto pr-2"></div>
+              </div>`;
+      setTimeout(() => wireGrievanceUI(), 0);
+    } else if (key === 'govTask') {
+      title = 'MCD Actions Taken';
+      body = `
+        <div class="space-y-4 text-slate-300">
+          <div class="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-xl">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-emerald-300">Ward</label>
+                <select id="mcdWardSelect" class="w-full bg-black/40 border border-white/10 rounded p-2 text-sm text-white focus:border-emerald-500 outline-none"></select>
+              </div>
+              <div>
+                <label class="text-xs text-emerald-300">Date of Action</label>
+                <input id="mcdActionDate" type="date" class="w-full bg-black/40 border border-white/10 rounded p-2 text-sm text-white focus:border-emerald-500 outline-none" />
+              </div>
+            </div>
+            <div class="mt-3">
+              <label class="text-xs text-emerald-300">Action Description</label>
+              <textarea id="mcdActionInput" rows="3" class="w-full bg-black/40 border border-white/10 rounded p-2 text-sm text-white focus:border-emerald-500 outline-none" placeholder="Enter action (e.g., 5 Water Sprinklers deployed)"></textarea>
+            </div>
+            <div class="mt-3">
+              <label class="text-xs text-emerald-300">Supporting Document (optional)</label>
+              <input id="mcdActionFile" type="file" class="w-full text-sm text-slate-200" accept=".pdf,.jpg,.png,.jpeg,.doc,.docx" />
+            </div>
+            <button id="submitMCDAction" class="mt-3 w-full bg-emerald-600 py-2 rounded text-sm font-bold hover:bg-emerald-700 transition">Submit Action</button>
+            <div id="mcdFormStatus" class="mt-2 text-xs min-h-[1rem]"></div>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="text-xs text-slate-400">Recent actions</div>
+            <div>
+              <select id="mcdListWardSelect" class="bg-black/40 border border-white/10 rounded p-1.5 text-xs text-white focus:border-emerald-500 outline-none"></select>
+            </div>
+          </div>
+          <div id="mcdActionsList" class="space-y-2 max-h-60 overflow-y-auto pr-1"></div>
+        </div>`;
+      setTimeout(() => wireMCDActionsUI(), 0);
+    }
+
+    citizenFloatTitle.innerHTML = title;
+    citizenFloatBody.innerHTML = body;
+    citizenFloat.classList.remove('hidden');
+    setTimeout(() => { citizenFloat.classList.remove('opacity-0', 'scale-95'); }, 10);
+
+    // Existing Forecast Logic...
+    if (key === 'forecast') {
+      setTimeout(() => {
+        const dataArr = Array.isArray(window.latestForecast24h) ? window.latestForecast24h : [];
+        if (typeof window.renderForecastTrend === 'function') window.renderForecastTrend(dataArr);
+        if (Array.isArray(dataArr) && dataArr.length) {
+          const norm = dataArr.map(x => ({ aqi: Number(x.aqi || 0), label: labelFromTime(x.time) }));
+          const minObj = norm.reduce((m, x) => (x.aqi < m.aqi ? x : m), norm[0]);
+          const maxObj = norm.reduce((m, x) => (x.aqi > m.aqi ? x : m), norm[0]);
+          const minPacket = document.getElementById('minAqiPacket');
+          const maxPacket = document.getElementById('maxAqiPacket');
+          if (minPacket && minObj) {
+            minPacket.innerText = `${minObj.label} (${minObj.aqi})`;
+            const c = getAQIColor(minObj.aqi);
+            minPacket.style.color = c;
+            minPacket.style.backgroundColor = c + '22';
+            minPacket.style.border = '1px solid ' + (c + '44');
+          }
+          if (maxPacket && maxObj) {
+            maxPacket.innerText = `${maxObj.label} (${maxObj.aqi})`;
+            const c = getAQIColor(maxObj.aqi);
+            maxPacket.style.color = c;
+            maxPacket.style.backgroundColor = c + '22';
+            maxPacket.style.border = '1px solid ' + (c + '44');
+          }
+        }
+      }, 0);
+    }
+  });
+});
+
+// 4. Close Button Logic
+citizenFloatClose.addEventListener('click', () => {
+  citizenFloat.classList.add('opacity-0', 'scale-95');
+  setTimeout(() => {
+    citizenFloat.classList.add('hidden');
+  }, 500);
+});
+
+async function wireGrievanceUI() {
+  const textEl = document.getElementById('grievText');
+  const imgEl = document.getElementById('grievImage');
+  const submitBtn = document.getElementById('grievSubmit');
+  const statusEl = document.getElementById('grievStatus');
+  const listEl = document.getElementById('grievList');
+  const voiceBtn = document.getElementById('voiceBtn');
+  const imgUploadBtn = document.getElementById('imgUploadBtn');
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
+  const baseUrl = REMOTE_SERVER_URL.replace(/\/$/, '');
+
+  // --- Voice to Text Logic ---
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRecognition && voiceBtn) {
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    voiceBtn.addEventListener('click', () => {
+      try {
+        recognition.start();
+        statusEl.innerText = 'Listening...';
+        voiceBtn.classList.add('text-emerald-400', 'animate-pulse');
+      } catch (e) {
+        console.error(e);
+      }
+    });
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      textEl.value = (textEl.value + ' ' + transcript).trim();
+      statusEl.innerText = '';
+      voiceBtn.classList.remove('text-emerald-400', 'animate-pulse');
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error', event.error);
+      statusEl.innerText = 'Voice input failed. Please type.';
+      voiceBtn.classList.remove('text-emerald-400', 'animate-pulse');
+    };
+
+    recognition.onend = () => {
+      voiceBtn.classList.remove('text-emerald-400', 'animate-pulse');
+      if (statusEl.innerText === 'Listening...') statusEl.innerText = '';
+    };
+  } else if (voiceBtn) {
+    voiceBtn.style.display = 'none'; // Hide if not supported
+  }
+
+  // --- Image Upload UI Logic ---
+  if (imgUploadBtn && imgEl) {
+    imgUploadBtn.addEventListener('click', () => imgEl.click());
+    imgEl.addEventListener('change', () => {
+      if (imgEl.files && imgEl.files[0]) {
+        fileNameDisplay.textContent = imgEl.files[0].name.length > 15 
+          ? imgEl.files[0].name.substring(0, 12) + '...' 
+          : imgEl.files[0].name;
+        imgUploadBtn.classList.add('border-emerald-500/50', 'bg-emerald-500/10');
+      } else {
+        fileNameDisplay.textContent = 'Add Photo';
+        imgUploadBtn.classList.remove('border-emerald-500/50', 'bg-emerald-500/10');
+      }
+    });
+  }
+
+  async function loadComplaints() {
+  listEl.innerHTML = '<div class="text-xs text-slate-500 animate-pulse">Loading complaints...</div>';
+  try {
+    const r = await fetch(`${baseUrl}/api/grievances`, {
+       headers: { 'ngrok-skip-browser-warning': 'true' }
+    });
+    const items = r.ok ? await r.json() : [];
+    
+    if (items.length) {
+      listEl.innerHTML = items.map(it => `
+        <div class="glass p-3 rounded flex flex-col gap-3 group hover:bg-white/5 transition-colors border border-white/5">
+          <div class="flex justify-between items-start">
+            <div class="text-xs">
+              <div class="font-medium ${it.status === 'resolved' ? 'text-emerald-400 line-through' : 'text-slate-200'}">
+                ${it.description || 'No description'}
+              </div>
+              ${it.image_url ? `<a href="${it.image_url}" target="_blank" class="text-emerald-400 hover:text-emerald-300 underline mt-1 inline-block">View Image</a>` : ''}
+              <div class="text-[10px] text-slate-500 mt-1">Status: <span class="${it.status === 'resolved' ? 'text-emerald-400' : 'text-orange-400'} uppercase">${it.status || 'pending'}</span></div>
+            </div>
+            
+            <div class="flex gap-2">
+              ${it.status !== 'resolved' ? `
+                <button data-id="${it.id}" class="resolveGriev px-2 py-1 text-[10px] font-bold rounded bg-emerald-500/20 hover:bg-emerald-600 text-emerald-400 hover:text-white transition-all">
+                  RESOLVE
+                </button>
+              ` : '<span class="text-emerald-500 text-[10px] font-bold">✓ FIXED</span>'}
+              
+              
+            </div>
+          </div>
+        </div>
+      `).join('');
+      
+      // --- Wire up Resolve Buttons ---
+      listEl.querySelectorAll('.resolveGriev').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          btn.disabled = true;
+          btn.innerText = '...';
+          try {
+            const res = await fetch(`${baseUrl}/api/grievances/${id}/resolve`, { 
+              method: 'PATCH', // or POST depending on your backend
+              headers: { 
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true' 
+              },
+              body: JSON.stringify({ status: 'resolved' })
+            });
+            if (!res.ok) throw new Error('Resolve failed');
+            await loadComplaints(); // Refresh list
+          } catch (err) {
+            statusEl.innerText = 'Error resolving complaint.';
+          }
+        });
+      });
+
+      
+    } else {
+      listEl.innerHTML = '<div class="text-xs text-slate-400 text-center py-4 italic">No unresolved complaints.</div>';
+    }
+  } catch (err) {
+    listEl.innerHTML = '<div class="text-xs text-red-400">Failed to load complaints.</div>';
+  }
+}
+
+  if (submitBtn) submitBtn.addEventListener('click', async () => {
+    const desc = (textEl.value || '').trim();
+    const file = imgEl.files && imgEl.files[0];
+    if (!desc && !file) {
+      statusEl.innerText = 'Please provide a description or an image.';
+      return;
+    }
+    const payload = { description: desc, ward: latestWardName || '' };
+    
+    statusEl.innerText = 'Submitting...';
+    submitBtn.disabled = true;
+    submitBtn.classList.add('opacity-75');
+    
+    try {
+      const r = await fetch(`${baseUrl}/api/grievances`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify(payload) });
+      if (!r.ok) throw new Error('Submit failed');
+      statusEl.innerText = 'Submitted successfully.';
+      statusEl.className = 'text-xs text-emerald-400';
+      textEl.value = '';
+      imgEl.value = '';
+      fileNameDisplay.textContent = 'Add Photo';
+      imgUploadBtn.classList.remove('border-emerald-500/50', 'bg-emerald-500/10');
+      
+      await loadComplaints();
+      setTimeout(() => { statusEl.innerText = ''; }, 3000);
+    } catch (err) {
+      statusEl.innerText = 'Error submitting complaint.';
+      statusEl.className = 'text-xs text-red-400';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.classList.remove('opacity-75');
+    }
+  });
+
+  loadComplaints();
+}
+async function wireMCDActionsUI() {
+  const input = document.getElementById('mcdActionInput');
+  const dateEl = document.getElementById('mcdActionDate');
+  const fileEl = document.getElementById('mcdActionFile');
+  const wardSelect = document.getElementById('mcdWardSelect');
+  const submitBtn = document.getElementById('submitMCDAction');
+  const listEl = document.getElementById('mcdActionsList');
+  const listWardSelect = document.getElementById('mcdListWardSelect');
+  const statusEl = document.getElementById('mcdFormStatus');
+  const baseUrl = REMOTE_SERVER_URL.replace(/\/$/, '');
+  const wards = (wardsGeo && wardsGeo.features) ? wardsGeo.features : [];
+  const wardNames = wards.map(f => f.properties.WardName || f.properties.name).filter(Boolean);
+  wardSelect.innerHTML = wardNames.map(w => `<option>${w}</option>`).join('');
+  listWardSelect.innerHTML = wardNames.map(w => `<option>${w}</option>`).join('');
+  if (window.latestWardName) {
+    const idx = wardNames.indexOf(window.latestWardName);
+    if (idx >= 0) {
+      wardSelect.selectedIndex = idx;
+      listWardSelect.selectedIndex = idx;
+    }
+  }
+
+  // Function to Load existing actions for this ward
+  async function loadActions() {
+    listEl.innerHTML = '<div class="text-xs text-slate-500 italic">Syncing with server...</div>';
+    try {
+      const viewWard = listWardSelect.value || wardSelect.value || '';
+      const r = await fetch(`${baseUrl}/api/mcd-actions?ward=${encodeURIComponent(viewWard)}`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
+      const data = await r.json();
+      
+      if (data.length > 0) {
+        listEl.innerHTML = data.map(act => `
+          <div class="glass p-3 rounded flex justify-between items-center group border border-white/5">
+            <div class="text-sm">
+              <div class="text-white font-medium">${act.action_text}</div>
+              <div class="text-[10px] text-slate-500">${new Date(act.action_date).toLocaleDateString()}</div>
+              ${act.doc_url ? `<a href="${act.doc_url}" target="_blank" class="text-[10px] text-emerald-300 underline">Document</a>` : ''}
+            </div>
+            <button onclick="deleteMCDAction('${act.id}')" class="text-xs text-red-400 bg-red-500/10 px-2 py-1 rounded hover:bg-red-500 hover:text-white transition">Delete</button>
+          </div>
+        `).join('');
+      } else {
+        listEl.innerHTML = '<div class="text-xs text-slate-500 italic text-center py-4">No actions recorded for this ward.</div>';
+      }
+    } catch (e) {
+      listEl.innerHTML = '<div class="text-xs text-red-400">Failed to load data.</div>';
+    }
+  }
+
+  // Handle Submission
+  submitBtn.onclick = async () => {
+    const ward = wardSelect.value || '';
+    const text = input.value.trim();
+    const dateStr = dateEl.value || '';
+    if (!ward || !text || !dateStr) {
+      statusEl.innerText = 'Please fill Ward, Date, and Description.';
+      statusEl.className = 'text-xs text-red-400';
+      return;
+    }
+    let docUrl = null;
+    const file = fileEl.files && fileEl.files[0];
+    if (file) {
+      if (file.size > 1024 * 1024) {
+        statusEl.innerText = 'File too large (max 1MB).';
+        statusEl.className = 'text-xs text-red-400';
+        return;
+      }
+      const buf = await file.arrayBuffer();
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      docUrl = `data:${file.type};base64,${b64}`;
+    }
+    submitBtn.disabled = true;
+    try {
+      await fetch(`${baseUrl}/api/mcd-actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+        body: JSON.stringify({ ward, action_text: text, action_date: dateStr, doc_url: docUrl })
+      });
+      input.value = '';
+      dateEl.value = '';
+      fileEl.value = '';
+      statusEl.innerText = 'Submitted.';
+      statusEl.className = 'text-xs text-emerald-400';
+      loadActions();
+    } catch (e) {
+      statusEl.innerText = 'Error posting update.';
+      statusEl.className = 'text-xs text-red-400';
+    } finally {
+      submitBtn.disabled = false;
+    }
+  };
+
+  listWardSelect.onchange = loadActions;
+  loadActions();
+}
+
+// Global helper for deletion
+async function deleteMCDAction(id) {
+  if (!confirm("Remove this action from the public dashboard?")) return;
+  const baseUrl = REMOTE_SERVER_URL.replace(/\/$/, '');
+  try {
+    await fetch(`${baseUrl}/api/mcd-actions/${id}`, { 
+        method: 'DELETE',
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+    });
+    // Trigger refresh by clicking the tab again
+    document.querySelector('[data-key="govTask"]').click();
+  } catch (e) { alert("Delete failed."); }
+}
+try {
+  const govtToggle = document.getElementById('neo-toggle-govt');
+  window.onSafetyToggleChanged = function(active) {
+    document.body.dataset.safety = active ? '1' : '0';
+  };
+  if (govtToggle && !govtToggle.dataset.bound) {
+    govtToggle.dataset.bound = '1';
+    govtToggle.addEventListener('change', () => {
+      window.onSafetyToggleChanged(!!govtToggle.checked);
+    });
+  }
+} catch {}
+</script>
+</body>
+</html>
